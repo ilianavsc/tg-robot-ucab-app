@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:robot_ucab_app/core/mqtt/mqtt_service.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
+import 'package:robot_ucab_app/features/auth/catalogo_pistas.dart';
 import 'package:robot_ucab_app/features/auth/registro_usuarios.dart';
 import 'package:robot_ucab_app/features/auth/sesion_local.dart';
 import 'package:robot_ucab_app/features/perfil/aprendizaje_ruta.dart';
@@ -323,6 +324,52 @@ void main() {
       expect(t.takeException(), isNull);
       await _cerrar(t, e);
     });
+
+    test('CatalogoPistas inicia con Pista B y Pista A y permite agregar pista', () {
+      final CatalogoPistas c = CatalogoPistas();
+      expect(c.pistas.length, 2);
+      expect(c.activaId, 'B');
+      expect(c.seleccionar('A'), isTrue);
+      expect(c.activaId, 'A');
+      final PistaLocal? nueva = c.agregarPista(
+        nombre: 'Laboratorio 2',
+        longitudM: 12.5,
+      );
+      expect(nueva, isNotNull);
+      expect(c.pistas.length, 3);
+      expect(c.activa.nombre, 'Laboratorio 2');
+      expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
+      c.dispose();
+    });
+
+    testWidgets(
+      'botón Pistas abre menú desplegable, selecciona pista y crea + Nueva pista',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        expect(find.byKey(const Key('login-pistas')), findsOneWidget);
+        expect(find.text('Pistas'), findsOneWidget);
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        expect(find.byKey(const Key('pista-item-B')), findsOneWidget);
+        expect(find.byKey(const Key('pista-item-A')), findsOneWidget);
+        expect(find.byKey(const Key('pista-nueva')), findsOneWidget);
+        expect(find.text('+ Nueva pista'), findsOneWidget);
+        await _tocar(t, find.byKey(const Key('pista-item-A')));
+        // Reabrir y crear nueva pista
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        await _tocar(t, find.byKey(const Key('pista-nueva')));
+        await t.enterText(
+          find.byKey(const Key('nueva-pista-nombre')),
+          'Pasillo Norte',
+        );
+        await t.enterText(find.byKey(const Key('nueva-pista-largo')), '11.5');
+        await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
+        // Comprobar que la nueva pista aparece en el menú
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        expect(find.text('Pasillo Norte'), findsOneWidget);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
   });
 
   group('Perfil · Operador', () {

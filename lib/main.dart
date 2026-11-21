@@ -4,6 +4,7 @@ import 'package:provider/single_child_widget.dart';
 
 import 'core/mqtt/mqtt_service.dart';
 import 'core/theme/cockpit_theme.dart';
+import 'features/auth/catalogo_pistas.dart';
 import 'features/auth/pantalla_login.dart';
 import 'features/auth/registro_usuarios.dart';
 import 'features/auth/sesion_local.dart';
@@ -39,6 +40,9 @@ class AppRobotUcab extends StatelessWidget {
         // Aprendizaje de ruta (solo Admin, SIL en memoria): la usa el Operador.
         ChangeNotifierProvider<AprendizajeRuta>(
           create: (_) => AprendizajeRuta(),
+        ),
+        ChangeNotifierProvider<CatalogoPistas>(
+          create: (_) => CatalogoPistas(),
         ),
       ],
       child: MaterialApp(
