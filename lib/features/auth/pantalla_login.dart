@@ -6,6 +6,7 @@ import '../../core/theme/cockpit_theme.dart';
 import '../../shared/widgets/pastilla_mqtt.dart';
 import '../telemetria/cockpit_ui.dart';
 import 'catalogo_pistas.dart';
+import 'pantalla_escaneo_pista.dart';
 import 'registro_usuarios.dart';
 import 'sesion_local.dart';
 
@@ -46,13 +47,33 @@ class _PantallaLoginState extends State<PantallaLogin> {
     super.dispose();
   }
 
+  /// `+ Nueva pista`: crea la pista en modo básico (0 torres, pendiente) y
+  /// abre de inmediato el Escaneo y Validación de Pista (Gemelo Digital).
   Future<void> _mostrarNuevaPista(CatalogoPistas catalogo) async {
-    final bool? creada = await showDialog<bool>(
+    final String? id = await showDialog<String>(
       context: context,
       builder: (_) => _DialogoNuevaPista(catalogo: catalogo),
     );
-    if (creada == true && mounted) setState(() {});
+    if (id == null || !mounted) return;
+    setState(() => _error = null);
+    await _abrirEscaneo(catalogo, id);
   }
+
+  Future<void> _abrirEscaneo(CatalogoPistas catalogo, String id) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => PantallaEscaneoPista(catalogo: catalogo, pistaId: id),
+      ),
+    );
+    if (mounted) setState(() => _error = null);
+  }
+
+  /// Regla de acceso: el Operador solo entra con una pista **configurada**; el
+  /// Administrador puede entrar con cualquier pista activa.
+  bool _puedeEntrar(CatalogoPistas catalogo) =>
+      catalogo.activaConfigurada ||
+      (catalogo.tienePistaActiva &&
+          _rolSeleccionado == RolUsuario.administrador);
 
   void _cambiarRol(RolUsuario rol) {
     if (_rolSeleccionado == rol) return;
@@ -63,9 +84,18 @@ class _PantallaLoginState extends State<PantallaLogin> {
   }
 
   void _entrar() {
-    if (!_catalogo(context, listen: false).tienePistaActiva) {
+    final CatalogoPistas catalogo = _catalogo(context, listen: false);
+    if (!catalogo.tienePistaActiva) {
       setState(
         () => _error = 'Selecciona o crea una pista antes de iniciar sesión.',
+      );
+      return;
+    }
+    if (!_puedeEntrar(catalogo)) {
+      setState(
+        () => _error =
+            'La pista activa está pendiente de escaneo: el Operador necesita '
+            'una pista configurada.',
       );
       return;
     }
@@ -231,7 +261,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          onPressed: catalogo.tienePistaActiva ? _entrar : null,
+                          onPressed: _puedeEntrar(catalogo) ? _entrar : null,
                           child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
@@ -251,6 +281,13 @@ class _PantallaLoginState extends State<PantallaLogin> {
                           style: CockpitText.bodySm.copyWith(
                             color: CockpitColors.warning,
                           ),
+                        )
+                      else if (!catalogo.activaConfigurada)
+                        _AvisoPistaPendiente(
+                          nombre: catalogo.activa!.nombre,
+                          bloqueaOperador: !esAdmin,
+                          alContinuar: () =>
+                              _abrirEscaneo(catalogo, catalogo.activaId!),
                         )
                       else
                         Text(
@@ -306,75 +343,86 @@ class _PantallaLoginState extends State<PantallaLogin> {
                       _mostrarNuevaPista(catalogo);
                     } else {
                       catalogo.seleccionar(valor);
-                      setState(() {});
+                      setState(() => _error = null);
                     }
                   },
                   itemBuilder: (BuildContext ctx) {
-                    final List<PopupMenuEntry<String>> items =
-                        <PopupMenuEntry<String>>[
-                          for (final PistaLocal p in catalogo.pistas)
-                            PopupMenuItem<String>(
-                              key: Key('pista-item-${p.id}'),
-                              value: p.id,
-                              child: Row(
-                                children: <Widget>[
-                                  Icon(
-                                    p.id == catalogo.activaId
-                                        ? Icons.check_circle
-                                        : Icons.radio_button_unchecked,
-                                    size: 16,
+                    final List<PopupMenuEntry<String>>
+                    items = <PopupMenuEntry<String>>[
+                      for (final PistaLocal p in catalogo.pistas)
+                        PopupMenuItem<String>(
+                          key: Key('pista-item-${p.id}'),
+                          value: p.id,
+                          child: Row(
+                            children: <Widget>[
+                              Icon(
+                                p.id == catalogo.activaId
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                size: 16,
+                                color: p.id == catalogo.activaId
+                                    ? CockpitColors.primary
+                                    : CockpitColors.outline,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  p.nombre,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: CockpitText.bodySm.copyWith(
                                     color: p.id == catalogo.activaId
-                                        ? CockpitColors.primary
-                                        : CockpitColors.outline,
+                                        ? Colors.white
+                                        : CockpitColors.onSurface,
+                                    fontWeight: p.id == catalogo.activaId
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      p.nombre,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: CockpitText.bodySm.copyWith(
-                                        color: p.id == catalogo.activaId
-                                            ? Colors.white
-                                            : CockpitColors.onSurface,
-                                        fontWeight: p.id == catalogo.activaId
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '${p.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m',
-                                    style: CockpitText.telemetrySm.copyWith(
-                                      color: CockpitColors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (!p.configurada) ...<Widget>[
+                                Icon(
+                                  Icons.pending_outlined,
+                                  key: Key('pista-pendiente-${p.id}'),
+                                  size: 14,
+                                  color: CockpitColors.warning,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                p.configurada
+                                    ? '${p.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m'
+                                    : 'pendiente',
+                                style: CockpitText.telemetrySm.copyWith(
+                                  color: CockpitColors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const PopupMenuDivider(height: 8),
+                      PopupMenuItem<String>(
+                        key: const Key('pista-nueva'),
+                        value: _accionNuevaPista,
+                        child: Row(
+                          children: <Widget>[
+                            const Icon(
+                              Icons.add_circle_outline,
+                              size: 16,
+                              color: CockpitColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '+ Nueva pista',
+                              style: CockpitText.bodySm.copyWith(
+                                color: CockpitColors.primary,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          const PopupMenuDivider(height: 8),
-                          PopupMenuItem<String>(
-                            key: const Key('pista-nueva'),
-                            value: _accionNuevaPista,
-                            child: Row(
-                              children: <Widget>[
-                                const Icon(
-                                  Icons.add_circle_outline,
-                                  size: 16,
-                                  color: CockpitColors.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '+ Nueva pista',
-                                  style: CockpitText.bodySm.copyWith(
-                                    color: CockpitColors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ];
+                          ],
+                        ),
+                      ),
+                    ];
                     return items;
                   },
                   child: Container(
@@ -643,7 +691,44 @@ class _Marca extends StatelessWidget {
   }
 }
 
-/// Modal compacto para registrar y activar una nueva pista en memoria.
+/// Aviso cuando la pista activa sigue pendiente de escaneo.
+class _AvisoPistaPendiente extends StatelessWidget {
+  const _AvisoPistaPendiente({
+    required this.nombre,
+    required this.bloqueaOperador,
+    required this.alContinuar,
+  });
+
+  final String nombre;
+  final bool bloqueaOperador;
+  final VoidCallback alContinuar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('login-aviso-pendiente'),
+      children: <Widget>[
+        Text(
+          bloqueaOperador
+              ? '$nombre está pendiente de escaneo. El Operador solo puede '
+                    'entrar con una pista configurada.'
+              : '$nombre está pendiente de escaneo (modo Administrador).',
+          textAlign: TextAlign.center,
+          style: CockpitText.bodySm.copyWith(color: CockpitColors.warning),
+        ),
+        TextButton.icon(
+          key: const Key('login-continuar-escaneo'),
+          onPressed: alContinuar,
+          icon: const Icon(Icons.radar, size: 18),
+          label: const Text('Continuar escaneo'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Modal compacto para registrar una nueva pista en modo básico. Devuelve el
+/// id de la pista creada (pendiente de escaneo) o `null` si se cancela.
 class _DialogoNuevaPista extends StatefulWidget {
   const _DialogoNuevaPista({required this.catalogo});
 
@@ -656,14 +741,7 @@ class _DialogoNuevaPista extends StatefulWidget {
 class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
   final TextEditingController _nombre = TextEditingController();
   final TextEditingController _largo = TextEditingController(text: '9.0');
-  int _torres = 0;
   String? _error;
-
-  static const List<(int, String)> _opcionesTorres = <(int, String)>[
-    (0, '0 (Sin torres · básico)'),
-    (1, '1 (Torre B1)'),
-    (2, '2 (B1 + B2)'),
-  ];
 
   @override
   void dispose() {
@@ -707,12 +785,11 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
       setState(() => _error = 'Longitud válida: 1,0 a 50,0 m.');
       return;
     }
-    widget.catalogo.agregarPista(
+    final PistaLocal? pista = widget.catalogo.agregarPista(
       nombre: nombre,
       longitudM: largo,
-      torresControl: _torres,
     );
-    Navigator.of(context).pop(true);
+    Navigator.of(context).pop(pista?.id);
   }
 
   @override
@@ -736,47 +813,35 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(
-                '¿Cuántas torres de control estima tu pista?',
-                key: const Key('nueva-pista-torres-label'),
-                style: CockpitText.labelMd.copyWith(
-                  color: CockpitColors.onSurface,
+              Container(
+                key: const Key('nueva-pista-modo-basico'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                key: const Key('nueva-pista-torres'),
-                spacing: 6,
-                runSpacing: 6,
-                children: <Widget>[
-                  for (final (int valor, String etiqueta) in _opcionesTorres)
-                    ChoiceChip(
-                      key: Key('torres-$valor'),
-                      label: Text(etiqueta),
-                      selected: _torres == valor,
-                      showCheckmark: false,
-                      selectedColor: CockpitColors.primary.withValues(
-                        alpha: 0.22,
-                      ),
-                      backgroundColor: CockpitColors.surfaceLow,
-                      side: BorderSide(
-                        color: _torres == valor
-                            ? CockpitColors.primary
-                            : CockpitColors.outlineVariant.withValues(
-                                alpha: 0.55,
-                              ),
-                      ),
-                      labelStyle: CockpitText.bodySm.copyWith(
-                        color: _torres == valor
-                            ? Colors.white
-                            : CockpitColors.onSurfaceVariant,
-                        fontWeight: _torres == valor
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
-                      onSelected: (_) => setState(() => _torres = valor),
+                decoration: BoxDecoration(
+                  color: CockpitColors.surfaceLow,
+                  borderRadius: BorderRadius.circular(CockpitRadius.md),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: CockpitColors.primary,
                     ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Modo básico · 0 torres de control. Al crearla se '
+                        'abre el escaneo de la pista (Gemelo Digital).',
+                        style: CockpitText.bodySm.copyWith(
+                          color: CockpitColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
               TextField(
@@ -803,7 +868,7 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
                 ),
                 decoration: _deco(
                   Icons.straighten_outlined,
-                  'Longitud en metros (ej. 9.0)',
+                  'Longitud estimada en metros (ej. 9.0)',
                   error: _error,
                 ),
               ),
@@ -813,13 +878,13 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
         FilledButton(
           key: const Key('nueva-pista-crear'),
           onPressed: _guardar,
-          child: const Text('Crear pista'),
+          child: const Text('Crear y escanear'),
         ),
       ],
     );

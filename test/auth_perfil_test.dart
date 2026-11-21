@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:robot_ucab_app/core/mqtt/mqtt_service.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 import 'package:robot_ucab_app/features/auth/catalogo_pistas.dart';
+import 'package:robot_ucab_app/features/auth/escaneo_pista.dart';
 import 'package:robot_ucab_app/features/auth/registro_usuarios.dart';
 import 'package:robot_ucab_app/features/auth/sesion_local.dart';
 import 'package:robot_ucab_app/features/perfil/aprendizaje_ruta.dart';
@@ -329,85 +330,173 @@ void main() {
       await _cerrar(t, e);
     });
 
-    test(
-      'CatalogoPistas inicia solo con Pista A, sin pista seleccionada, y guarda torresControl (0 por defecto)',
-      () {
-        final CatalogoPistas c = CatalogoPistas();
-        expect(c.pistas.map((PistaLocal p) => p.id), <String>['A']);
-        expect(c.activa, isNull);
-        expect(c.tienePistaActiva, isFalse);
-        expect(c.seleccionar('B'), isFalse);
-        expect(c.seleccionar('A'), isTrue);
-        expect(c.activaId, 'A');
-        final PistaLocal? basica = c.agregarPista(
-          nombre: 'Laboratorio 2',
-          longitudM: 12.5,
-        );
-        expect(basica, isNotNull);
-        expect(basica!.torresControl, 0);
-        expect(c.activa!.nombre, 'Laboratorio 2');
-        final PistaLocal? conTorres = c.agregarPista(
-          nombre: 'Pasillo 2 Torres',
-          longitudM: 9.0,
-          torresControl: 2,
-        );
-        expect(conTorres!.torresControl, 2);
-        expect(c.pistas.length, 3);
-        expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
-        c.dispose();
-      },
-    );
+    test('CatalogoPistas inicia con Pista A configurada; una pista nueva nace básica (0 torres) y pendiente', () {
+      final CatalogoPistas c = CatalogoPistas();
+      expect(c.pistas.map((PistaLocal p) => p.id), <String>['A']);
+      expect(c.activa, isNull);
+      expect(c.tienePistaActiva, isFalse);
+      expect(c.activaConfigurada, isFalse);
+      expect(c.seleccionar('B'), isFalse);
+      expect(c.seleccionar('A'), isTrue);
+      expect(c.activaId, 'A');
+      expect(c.activaConfigurada, isTrue);
+      final PistaLocal a = c.activa!;
+      expect(a.estado, EstadoPista.configurada);
+      expect(a.metricas!.completa, isTrue);
+      expect(a.metricas!.puntosControlM.length, 3);
+      expect(a.metricas!.segmentosValidados, <bool>[true, true, true]);
+      final PistaLocal? basica = c.agregarPista(
+        nombre: 'Laboratorio 2',
+        longitudM: 12.5,
+      );
+      expect(basica, isNotNull);
+      expect(basica!.torresControl, 0);
+      expect(basica.estado, EstadoPista.pendiente);
+      expect(basica.configurada, isFalse);
+      expect(basica.metricas, isNull);
+      expect(c.activa!.nombre, 'Laboratorio 2');
+      expect(c.activaConfigurada, isFalse);
+      expect(c.pistas.length, 2);
+      expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
+      c.dispose();
+    });
 
     testWidgets(
-      'sin pista seleccionada no permite iniciar sesión; al elegir Pista A o crear pista se habilita',
+      'sin pista no se puede entrar; con Pista A (configurada) el Operador inicia sesión',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
         expect(find.byKey(const Key('login-pistas')), findsOneWidget);
         expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
-        // Botón Iniciar Sesión deshabilitado al arrancar sin pista
         expect(
           t
               .widget<FilledButton>(find.byKey(const Key('login-entrar')))
               .onPressed,
           isNull,
         );
-        // Menú Pistas tiene solo Pista A (sin Pista B) y + Nueva pista
         await _tocar(t, find.byKey(const Key('login-pistas')));
         expect(find.byKey(const Key('pista-item-A')), findsOneWidget);
         expect(find.byKey(const Key('pista-item-B')), findsNothing);
+        expect(find.byKey(const Key('pista-pendiente-A')), findsNothing);
         expect(find.byKey(const Key('pista-nueva')), findsOneWidget);
+        await _tocar(t, find.byKey(const Key('pista-item-A')));
+        expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
+        expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
+        await _entrarCon(t, 'usuario', 'usuario');
+        expect(e.sesion.activa, isTrue);
+        expect(e.sesion.rol, RolUsuario.operador);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
 
-        // Abrir + Nueva pista: verifica selector de torres en 0 por defecto
+    testWidgets(
+      '+ Nueva pista nace pendiente y bloquea al Operador hasta completar el escaneo',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        await _tocar(t, find.byKey(const Key('login-pistas')));
         await _tocar(t, find.byKey(const Key('pista-nueva')));
+        // Modo básico: sin selector de torres
         expect(
-          find.text('¿Cuántas torres de control estima tu pista?'),
+          find.byKey(const Key('nueva-pista-modo-basico')),
           findsOneWidget,
         );
-        expect(
-          t.widget<ChoiceChip>(find.byKey(const Key('torres-0'))).selected,
-          isTrue,
-        );
-        expect(
-          t.widget<ChoiceChip>(find.byKey(const Key('torres-1'))).selected,
-          isFalse,
-        );
+        expect(find.byKey(const Key('nueva-pista-torres')), findsNothing);
+        expect(find.byType(ChoiceChip), findsNothing);
         await t.enterText(
           find.byKey(const Key('nueva-pista-nombre')),
           'Pasillo Norte',
         );
         await t.enterText(find.byKey(const Key('nueva-pista-largo')), '11.5');
         await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
+        // Se abre el Escaneo y Validación de Pista; lo abandonamos a medias
+        expect(find.byKey(const Key('escaneo-lienzo')), findsOneWidget);
+        expect(find.text('Pasillo Norte'), findsOneWidget);
+        await t.pump(const Duration(milliseconds: 500));
+        await _tocar(t, find.byKey(const Key('escaneo-salir')));
+        // De vuelta en Login: pista pendiente, Operador bloqueado
+        expect(find.byKey(const Key('login-aviso-pendiente')), findsOneWidget);
+        expect(
+          find.byKey(const Key('login-continuar-escaneo')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('login-pista-activa')), findsNothing);
+        expect(
+          t
+              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
+              .onPressed,
+          isNull,
+        );
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        expect(find.byKey(const Key('pista-pendiente-P1')), findsOneWidget);
+        await t.tapAt(const Offset(380, 800)); // cierra el menú
+        await t.pump(const Duration(milliseconds: 400));
+        expect(e.sesion.activa, isFalse);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
 
-        // Nueva pista queda activa y habilita Iniciar Sesión inmediatamente
-        expect(find.byKey(const Key('login-aviso-pista')), findsNothing);
+    testWidgets(
+      'escaneo completo (Lectura lenta → Pasada normal → Viajes 1/3, 2/3, 3/3) configura la pista y habilita el login',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        await _tocar(t, find.byKey(const Key('pista-nueva')));
+        await t.enterText(
+          find.byKey(const Key('nueva-pista-nombre')),
+          'Laboratorio 2',
+        );
+        await t.enterText(find.byKey(const Key('nueva-pista-largo')), '6.0');
+        await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
+        expect(find.byKey(const Key('escaneo-lienzo')), findsOneWidget);
+        expect(find.text('PENDIENTE · EN ESCANEO'), findsOneWidget);
+        final List<String> vistas = <String>[];
+        String etapaActiva() {
+          for (final EtapaEscaneo et in EtapaEscaneo.values) {
+            final Finder f = find.byKey(Key('etapa-${et.name}-estado'));
+            if (f.evaluate().isEmpty) continue;
+            final String txt = t.widget<Text>(f).data!;
+            if (txt.endsWith('%')) return et.name;
+          }
+          return 'fin';
+        }
+
+        for (int i = 0; i < 600; i++) {
+          if (find.byKey(const Key('escaneo-listo')).evaluate().isNotEmpty) {
+            break;
+          }
+          final String et = etapaActiva();
+          if (et != 'fin' && (vistas.isEmpty || vistas.last != et)) {
+            vistas.add(et);
+          }
+          await t.pump(const Duration(milliseconds: 100));
+        }
+        expect(vistas, <String>[
+          'lecturaLenta',
+          'pasadaNormal',
+          'viaje1',
+          'viaje2',
+          'viaje3',
+        ]);
+        expect(find.byKey(const Key('escaneo-listo')), findsOneWidget);
+        expect(find.text('CONFIGURADA'), findsOneWidget);
+        expect(find.text('3/3'), findsOneWidget);
+        // vuelve solo al Login
+        await t.pump(const Duration(seconds: 2));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 600));
+        expect(find.byKey(const Key('escaneo-lienzo')), findsNothing);
+        expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
         expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
-        expect(find.textContaining('Pasillo Norte'), findsOneWidget);
+        expect(find.textContaining('Laboratorio 2'), findsOneWidget);
         expect(
           t
               .widget<FilledButton>(find.byKey(const Key('login-entrar')))
               .onPressed,
           isNotNull,
         );
+        await _entrarCon(t, 'usuario', 'usuario');
+        expect(e.sesion.activa, isTrue);
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
       },
