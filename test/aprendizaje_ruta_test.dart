@@ -133,6 +133,9 @@ Future<void> _bajarRuta(WidgetTester t, Finder f) => t.scrollUntilVisible(
 
 Future<void> _abrirAprendizaje(WidgetTester t) async {
   await _tocar(t, find.byKey(const Key('boton-perfil')));
+  // Aprendizaje de Ruta se muestra cuando Modo Desarrollador está activo.
+  await _bajarPerfil(t, find.byKey(const Key('perfil-modo-desarrollador')));
+  await _tocar(t, find.byKey(const Key('perfil-modo-desarrollador')));
   await _bajarPerfil(t, find.byKey(const Key('perfil-aprendizaje')));
   await _tocar(t, find.byKey(const Key('perfil-aprendizaje')));
 }

@@ -49,6 +49,56 @@ class _PantallaLoginState extends State<PantallaLogin> {
 
   /// `+ Nueva pista`: crea la pista en modo básico (0 torres, pendiente) y
   /// abre de inmediato el Escaneo y Validación de Pista (Gemelo Digital).
+  Future<void> _confirmarEliminarPista(
+    CatalogoPistas catalogo,
+    PistaLocal pista,
+  ) async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogCtx) {
+        return AlertDialog(
+          backgroundColor: CockpitColors.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CockpitRadius.lg),
+            side: BorderSide(
+              color: CockpitColors.outlineVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          title: Text(
+            'Eliminar pista',
+            style: CockpitText.titleMd.copyWith(color: CockpitColors.onSurface),
+          ),
+          content: Text(
+            '¿Eliminar pista ${pista.nombre}?',
+            style: CockpitText.bodyMd.copyWith(
+              color: CockpitColors.onSurfaceVariant,
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              key: const Key('pista-eliminar-cancelar'),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('pista-eliminar-confirmar'),
+              style: FilledButton.styleFrom(
+                backgroundColor: CockpitColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmar == true) {
+      catalogo.eliminarPista(pista.id);
+      if (mounted) setState(() => _error = null);
+    }
+  }
+
   Future<void> _mostrarNuevaPista(CatalogoPistas catalogo) async {
     final String? id = await showDialog<String>(
       context: context,
@@ -401,6 +451,26 @@ class _PantallaLoginState extends State<PantallaLogin> {
                                 style: CockpitText.telemetrySm.copyWith(
                                   color: CockpitColors.onSurfaceVariant,
                                 ),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                key: Key('pista-eliminar-${p.id}'),
+                                tooltip: 'Eliminar pista ${p.nombre}',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
+                                splashRadius: 16,
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 16,
+                                  color: CockpitColors.outline,
+                                ),
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  _confirmarEliminarPista(catalogo, p);
+                                },
                               ),
                             ],
                           ),

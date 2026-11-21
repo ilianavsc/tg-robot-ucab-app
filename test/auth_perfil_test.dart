@@ -503,6 +503,57 @@ void main() {
         await _cerrar(t, e);
       },
     );
+
+    test(
+      'CatalogoPistas.eliminarPista remueve la pista y limpia la activa si coincidía',
+      () {
+        final CatalogoPistas c = CatalogoPistas();
+        expect(c.seleccionar('A'), isTrue);
+        expect(c.tienePistaActiva, isTrue);
+        expect(c.eliminarPista('inexistente'), isFalse);
+        expect(c.eliminarPista('A'), isTrue);
+        expect(c.pistas, isEmpty);
+        expect(c.activa, isNull);
+        expect(c.tienePistaActiva, isFalse);
+        c.dispose();
+      },
+    );
+
+    testWidgets(
+      'eliminar una pista desde ☰ Pistas la remueve y bloquea el login si era la activa',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        // Selecciona Pista A -> habilita Iniciar Sesión
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        await _tocar(t, find.byKey(const Key('pista-item-A')));
+        expect(
+          t
+              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
+              .onPressed,
+          isNotNull,
+        );
+        // Abre ☰ Pistas y pulsa papelera de Pista A -> diálogo de confirmación
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        await _tocar(t, find.byKey(const Key('pista-eliminar-A')));
+        expect(
+          find.text('¿Eliminar pista Pista A · Circuito histórico?'),
+          findsOneWidget,
+        );
+        await _tocar(t, find.byKey(const Key('pista-eliminar-confirmar')));
+        // Pista eliminada, selección limpia y login bloqueado nuevamente
+        expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
+        expect(
+          t
+              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
+              .onPressed,
+          isNull,
+        );
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        expect(find.byKey(const Key('pista-item-A')), findsNothing);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
   });
 
   group('Perfil · Operador', () {
@@ -563,12 +614,49 @@ void main() {
   });
 
   group('Perfil · Administrador', () {
-    Future<_Entorno> entrarAdmin(WidgetTester t, {double ancho = 390}) async {
+    Future<_Entorno> entrarAdmin(
+      WidgetTester t, {
+      double ancho = 390,
+      bool modoDev = true,
+    }) async {
       final _Entorno e = await _montar(t, ancho: ancho);
       await _entrarCon(t, 'administrador', 'administrador', admin: true);
       await _abrirPerfil(t);
+      if (modoDev) {
+        await _tocar(t, find.byKey(const Key('perfil-modo-desarrollador')));
+      }
       return e;
     }
+
+    testWidgets(
+      'sin Modo Desarrollador oculta Fail-Safe, Aprendizaje y Analítica P12; al activarlo aparecen',
+      (WidgetTester t) async {
+        final _Entorno e = await entrarAdmin(t, modoDev: false);
+        expect(find.text('PERFIL · ADMIN'), findsOneWidget);
+        expect(find.text('@administrador'), findsOneWidget);
+        expect(find.byKey(const Key('perfil-usuarios')), findsOneWidget);
+        expect(find.byKey(const Key('perfil-cerrar')), findsOneWidget);
+        expect(
+          find.byKey(const Key('perfil-modo-desarrollador')),
+          findsOneWidget,
+        );
+        // Ocultos con modoDesarrollador == false
+        expect(find.byKey(const Key('perfil-failsafe')), findsNothing);
+        expect(find.byKey(const Key('perfil-aprendizaje')), findsNothing);
+        expect(find.text('ANALÍTICA DE SESIÓN (P12)'), findsNothing);
+        expect(find.byKey(const Key('perfil-exportar')), findsNothing);
+        // Al activar Modo Desarrollador vuelven a aparecer
+        await _tocar(t, find.byKey(const Key('perfil-modo-desarrollador')));
+        expect(e.sesion.modoDesarrollador, isTrue);
+        expect(find.byKey(const Key('perfil-failsafe')), findsOneWidget);
+        expect(find.byKey(const Key('perfil-aprendizaje')), findsOneWidget);
+        expect(find.byKey(const Key('perfil-usuarios')), findsOneWidget);
+        await _mostrar(t, find.byKey(const Key('perfil-exportar')));
+        expect(find.text('ANALÍTICA DE SESIÓN (P12)'), findsOneWidget);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
 
     testWidgets('Fail-Safe es de solo lectura, con candado y umbrales reales', (
       WidgetTester t,

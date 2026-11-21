@@ -202,4 +202,15 @@ class CatalogoPistas extends ChangeNotifier {
     notifyListeners();
     return true;
   }
+
+  /// Elimina una pista del catálogo. Si era la pista activa, limpia la
+  /// selección (`activa == null`) para volver a exigir pista en el Login.
+  bool eliminarPista(String id) {
+    final int i = _pistas.indexWhere((PistaLocal p) => p.id == id);
+    if (i < 0) return false;
+    _pistas.removeAt(i);
+    if (_activaId == id) _activaId = null;
+    notifyListeners();
+    return true;
+  }
 }

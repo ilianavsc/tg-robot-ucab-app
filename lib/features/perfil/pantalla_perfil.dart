@@ -69,6 +69,7 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
     final MqttService servicio = context.watch<MqttService>();
     final RolUsuario rol = sesion.rol ?? RolUsuario.operador;
     final bool admin = rol == RolUsuario.administrador;
+    final bool dev = sesion.modoDesarrollador;
 
     return Scaffold(
       appBar: AppBar(
@@ -96,15 +97,23 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
               CabeceraIdentidad(sesion: sesion, rol: rol),
               const SizedBox(height: 16),
               if (admin) ...<Widget>[
-                const TarjetaFailSafe(),
-                const SizedBox(height: 12),
-                SeccionAdministracion(servicio: servicio),
+                if (dev) ...<Widget>[
+                  const TarjetaFailSafe(),
+                  const SizedBox(height: 12),
+                ],
+                SeccionAdministracion(
+                  servicio: servicio,
+                  modoDesarrollador: dev,
+                ),
                 const SizedBox(height: 12),
               ],
-              TarjetaSesionActual(sesion: sesion, servicio: servicio),
-              const SizedBox(height: 12),
-              TarjetaEnlaceMqtt(servicio: servicio),
-              const SizedBox(height: 16),
+              if (!admin || dev) ...<Widget>[
+                TarjetaSesionActual(sesion: sesion, servicio: servicio),
+                const SizedBox(height: 12),
+                TarjetaEnlaceMqtt(servicio: servicio),
+                const SizedBox(height: 16),
+              ] else
+                const SizedBox(height: 4),
               OutlinedButton.icon(
                 key: const Key('perfil-cerrar'),
                 style: OutlinedButton.styleFrom(

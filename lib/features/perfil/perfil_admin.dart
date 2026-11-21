@@ -172,9 +172,14 @@ class _FilaFailSafe extends StatelessWidget {
 /// Aprendizaje de Ruta, Gestión de Usuarios y Analítica CSV (P12), separadas
 /// del flujo principal del operador.
 class SeccionAdministracion extends StatelessWidget {
-  const SeccionAdministracion({super.key, required this.servicio});
+  const SeccionAdministracion({
+    super.key,
+    required this.servicio,
+    this.modoDesarrollador = false,
+  });
 
   final MqttService servicio;
+  final bool modoDesarrollador;
 
   @override
   Widget build(BuildContext context) {
@@ -189,13 +194,17 @@ class SeccionAdministracion extends StatelessWidget {
             etiqueta: 'Administración',
           ),
           const SizedBox(height: 12),
-          const TarjetaAprendizajeRuta(),
-          const SizedBox(height: 10),
+          if (modoDesarrollador) ...<Widget>[
+            const TarjetaAprendizajeRuta(),
+            const SizedBox(height: 10),
+          ],
           const TarjetaGestionUsuarios(),
-          const SizedBox(height: 12),
-          const TarjetaAnaliticaSesion(),
-          const SizedBox(height: 10),
-          BotonExportarSesion(servicio: servicio),
+          if (modoDesarrollador) ...<Widget>[
+            const SizedBox(height: 12),
+            const TarjetaAnaliticaSesion(),
+            const SizedBox(height: 10),
+            BotonExportarSesion(servicio: servicio),
+          ],
         ],
       ),
     );
