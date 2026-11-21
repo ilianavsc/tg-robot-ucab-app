@@ -89,6 +89,10 @@ Future<void> _entrarCon(
   String clave, {
   bool admin = false,
 }) async {
+  if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
+    await _tocar(t, find.byKey(const Key('login-pistas')));
+    await _tocar(t, find.byKey(const Key('pista-item-A')));
+  }
   await _tocar(
     t,
     find.byKey(Key(admin ? 'rol-administrador' : 'rol-operador')),

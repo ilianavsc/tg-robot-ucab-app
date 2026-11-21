@@ -100,13 +100,17 @@ Future<void> _tocar(WidgetTester t, Finder f) async {
   await t.pump(const Duration(milliseconds: 400));
 }
 
-/// Escribe usuario y contraseña en el Login, selecciona el rol y pulsa "Iniciar Sesión".
+/// Selecciona Pista A si aún no hay pista activa, elige rol, escribe credenciales y pulsa "Iniciar Sesión".
 Future<void> _entrarCon(
   WidgetTester t,
   String usuario,
   String clave, {
   bool admin = false,
 }) async {
+  if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
+    await _tocar(t, find.byKey(const Key('login-pistas')));
+    await _tocar(t, find.byKey(const Key('pista-item-A')));
+  }
   await _tocar(
     t,
     find.byKey(Key(admin ? 'rol-administrador' : 'rol-operador')),
@@ -325,47 +329,85 @@ void main() {
       await _cerrar(t, e);
     });
 
-    test('CatalogoPistas inicia con Pista B y Pista A y permite agregar pista', () {
-      final CatalogoPistas c = CatalogoPistas();
-      expect(c.pistas.length, 2);
-      expect(c.activaId, 'B');
-      expect(c.seleccionar('A'), isTrue);
-      expect(c.activaId, 'A');
-      final PistaLocal? nueva = c.agregarPista(
-        nombre: 'Laboratorio 2',
-        longitudM: 12.5,
-      );
-      expect(nueva, isNotNull);
-      expect(c.pistas.length, 3);
-      expect(c.activa.nombre, 'Laboratorio 2');
-      expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
-      c.dispose();
-    });
+    test(
+      'CatalogoPistas inicia solo con Pista A, sin pista seleccionada, y guarda torresControl (0 por defecto)',
+      () {
+        final CatalogoPistas c = CatalogoPistas();
+        expect(c.pistas.map((PistaLocal p) => p.id), <String>['A']);
+        expect(c.activa, isNull);
+        expect(c.tienePistaActiva, isFalse);
+        expect(c.seleccionar('B'), isFalse);
+        expect(c.seleccionar('A'), isTrue);
+        expect(c.activaId, 'A');
+        final PistaLocal? basica = c.agregarPista(
+          nombre: 'Laboratorio 2',
+          longitudM: 12.5,
+        );
+        expect(basica, isNotNull);
+        expect(basica!.torresControl, 0);
+        expect(c.activa!.nombre, 'Laboratorio 2');
+        final PistaLocal? conTorres = c.agregarPista(
+          nombre: 'Pasillo 2 Torres',
+          longitudM: 9.0,
+          torresControl: 2,
+        );
+        expect(conTorres!.torresControl, 2);
+        expect(c.pistas.length, 3);
+        expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
+        c.dispose();
+      },
+    );
 
     testWidgets(
-      'botón Pistas abre menú desplegable, selecciona pista y crea + Nueva pista',
+      'sin pista seleccionada no permite iniciar sesión; al elegir Pista A o crear pista se habilita',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
         expect(find.byKey(const Key('login-pistas')), findsOneWidget);
-        expect(find.text('Pistas'), findsOneWidget);
+        expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
+        // Botón Iniciar Sesión deshabilitado al arrancar sin pista
+        expect(
+          t
+              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
+              .onPressed,
+          isNull,
+        );
+        // Menú Pistas tiene solo Pista A (sin Pista B) y + Nueva pista
         await _tocar(t, find.byKey(const Key('login-pistas')));
-        expect(find.byKey(const Key('pista-item-B')), findsOneWidget);
         expect(find.byKey(const Key('pista-item-A')), findsOneWidget);
+        expect(find.byKey(const Key('pista-item-B')), findsNothing);
         expect(find.byKey(const Key('pista-nueva')), findsOneWidget);
-        expect(find.text('+ Nueva pista'), findsOneWidget);
-        await _tocar(t, find.byKey(const Key('pista-item-A')));
-        // Reabrir y crear nueva pista
-        await _tocar(t, find.byKey(const Key('login-pistas')));
+
+        // Abrir + Nueva pista: verifica selector de torres en 0 por defecto
         await _tocar(t, find.byKey(const Key('pista-nueva')));
+        expect(
+          find.text('¿Cuántas torres de control estima tu pista?'),
+          findsOneWidget,
+        );
+        expect(
+          t.widget<ChoiceChip>(find.byKey(const Key('torres-0'))).selected,
+          isTrue,
+        );
+        expect(
+          t.widget<ChoiceChip>(find.byKey(const Key('torres-1'))).selected,
+          isFalse,
+        );
         await t.enterText(
           find.byKey(const Key('nueva-pista-nombre')),
           'Pasillo Norte',
         );
         await t.enterText(find.byKey(const Key('nueva-pista-largo')), '11.5');
         await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
-        // Comprobar que la nueva pista aparece en el menú
-        await _tocar(t, find.byKey(const Key('login-pistas')));
-        expect(find.text('Pasillo Norte'), findsOneWidget);
+
+        // Nueva pista queda activa y habilita Iniciar Sesión inmediatamente
+        expect(find.byKey(const Key('login-aviso-pista')), findsNothing);
+        expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
+        expect(find.textContaining('Pasillo Norte'), findsOneWidget);
+        expect(
+          t
+              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
+              .onPressed,
+          isNotNull,
+        );
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
       },

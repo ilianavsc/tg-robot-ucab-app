@@ -63,6 +63,12 @@ class _PantallaLoginState extends State<PantallaLogin> {
   }
 
   void _entrar() {
+    if (!_catalogo(context, listen: false).tienePistaActiva) {
+      setState(
+        () => _error = 'Selecciona o crea una pista antes de iniciar sesión.',
+      );
+      return;
+    }
     final CuentaLocal? cuenta = context.read<RegistroUsuarios>().autenticar(
       _usuario.text,
       _clave.text,
@@ -225,7 +231,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          onPressed: _entrar,
+                          onPressed: catalogo.tienePistaActiva ? _entrar : null,
                           child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
@@ -236,7 +242,27 @@ class _PantallaLoginState extends State<PantallaLogin> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 10),
+                      if (!catalogo.tienePistaActiva)
+                        Text(
+                          'Selecciona o crea una pista antes de iniciar sesión.',
+                          key: const Key('login-aviso-pista'),
+                          textAlign: TextAlign.center,
+                          style: CockpitText.bodySm.copyWith(
+                            color: CockpitColors.warning,
+                          ),
+                        )
+                      else
+                        Text(
+                          'Pista activa: ${catalogo.activa!.nombre} '
+                          '(${catalogo.activa!.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m)',
+                          key: const Key('login-pista-activa'),
+                          textAlign: TextAlign.center,
+                          style: CockpitText.bodySm.copyWith(
+                            color: CockpitColors.primary,
+                          ),
+                        ),
+                      const SizedBox(height: 24),
                       const Center(child: PastillaMqtt()),
                       const SizedBox(height: 10),
                       Padding(
@@ -630,7 +656,14 @@ class _DialogoNuevaPista extends StatefulWidget {
 class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
   final TextEditingController _nombre = TextEditingController();
   final TextEditingController _largo = TextEditingController(text: '9.0');
+  int _torres = 0;
   String? _error;
+
+  static const List<(int, String)> _opcionesTorres = <(int, String)>[
+    (0, '0 (Sin torres · básico)'),
+    (1, '1 (Torre B1)'),
+    (2, '2 (B1 + B2)'),
+  ];
 
   @override
   void dispose() {
@@ -674,7 +707,11 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
       setState(() => _error = 'Longitud válida: 1,0 a 50,0 m.');
       return;
     }
-    widget.catalogo.agregarPista(nombre: nombre, longitudM: largo);
+    widget.catalogo.agregarPista(
+      nombre: nombre,
+      longitudM: largo,
+      torresControl: _torres,
+    );
     Navigator.of(context).pop(true);
   }
 
@@ -693,40 +730,85 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
         style: CockpitText.titleMd.copyWith(color: CockpitColors.onSurface),
       ),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            TextField(
-              key: const Key('nueva-pista-nombre'),
-              controller: _nombre,
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              style: CockpitText.bodyMd.copyWith(
-                color: CockpitColors.onSurface,
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                '¿Cuántas torres de control estima tu pista?',
+                key: const Key('nueva-pista-torres-label'),
+                style: CockpitText.labelMd.copyWith(
+                  color: CockpitColors.onSurface,
+                ),
               ),
-              decoration: _deco(Icons.route_outlined, 'Ej. Laboratorio 2'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('nueva-pista-largo'),
-              controller: _largo,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(height: 8),
+              Wrap(
+                key: const Key('nueva-pista-torres'),
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final (int valor, String etiqueta) in _opcionesTorres)
+                    ChoiceChip(
+                      key: Key('torres-$valor'),
+                      label: Text(etiqueta),
+                      selected: _torres == valor,
+                      showCheckmark: false,
+                      selectedColor: CockpitColors.primary.withValues(
+                        alpha: 0.22,
+                      ),
+                      backgroundColor: CockpitColors.surfaceLow,
+                      side: BorderSide(
+                        color: _torres == valor
+                            ? CockpitColors.primary
+                            : CockpitColors.outlineVariant.withValues(
+                                alpha: 0.55,
+                              ),
+                      ),
+                      labelStyle: CockpitText.bodySm.copyWith(
+                        color: _torres == valor
+                            ? Colors.white
+                            : CockpitColors.onSurfaceVariant,
+                        fontWeight: _torres == valor
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                      onSelected: (_) => setState(() => _torres = valor),
+                    ),
+                ],
               ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _guardar(),
-              style: CockpitText.bodyMd.copyWith(
-                color: CockpitColors.onSurface,
+              const SizedBox(height: 14),
+              TextField(
+                key: const Key('nueva-pista-nombre'),
+                controller: _nombre,
+                autofocus: true,
+                textInputAction: TextInputAction.next,
+                style: CockpitText.bodyMd.copyWith(
+                  color: CockpitColors.onSurface,
+                ),
+                decoration: _deco(Icons.route_outlined, 'Ej. Laboratorio 2'),
               ),
-              decoration: _deco(
-                Icons.straighten_outlined,
-                'Longitud en metros (ej. 9.0)',
-                error: _error,
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('nueva-pista-largo'),
+                controller: _largo,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _guardar(),
+                style: CockpitText.bodyMd.copyWith(
+                  color: CockpitColors.onSurface,
+                ),
+                decoration: _deco(
+                  Icons.straighten_outlined,
+                  'Longitud en metros (ej. 9.0)',
+                  error: _error,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: <Widget>[
