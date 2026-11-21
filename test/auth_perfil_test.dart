@@ -363,6 +363,22 @@ void main() {
       c.dispose();
     });
 
+    test('puedeIniciarSesion: Operador exige configurada; Admin entra con cualquier activa', () {
+      final CatalogoPistas c = CatalogoPistas();
+      // Sin pista activa: nadie puede entrar.
+      expect(c.puedeIniciarSesion(RolUsuario.operador), isFalse);
+      expect(c.puedeIniciarSesion(RolUsuario.administrador), isFalse);
+      // Pista A (configurada): ambos pueden.
+      c.seleccionar('A');
+      expect(c.puedeIniciarSesion(RolUsuario.operador), isTrue);
+      expect(c.puedeIniciarSesion(RolUsuario.administrador), isTrue);
+      // Pista nueva (pendiente): solo el Administrador.
+      c.agregarPista(nombre: 'Lab 2', longitudM: 12.5);
+      expect(c.puedeIniciarSesion(RolUsuario.operador), isFalse);
+      expect(c.puedeIniciarSesion(RolUsuario.administrador), isTrue);
+      c.dispose();
+    });
+
     testWidgets(
       'sin pista no se puede entrar; con Pista A (configurada) el Operador inicia sesión',
       (WidgetTester t) async {

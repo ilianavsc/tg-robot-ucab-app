@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/pistas/trazado_pista.dart';
+import 'sesion_local.dart';
 
 export '../../core/pistas/trazado_pista.dart'
     show largoCanonicoM, largoPistaAM, puntosControlPara;
@@ -149,6 +150,11 @@ class CatalogoPistas extends ChangeNotifier {
 
   /// `true` si hay una pista activa y ya está configurada (requisito del Operador).
   bool get activaConfigurada => activa?.configurada ?? false;
+
+  /// Regla de acceso centralizada: el Operador entra solo con una pista
+  /// **configurada**; el Administrador con cualquier pista activa.
+  bool puedeIniciarSesion(RolUsuario rol) =>
+      rol == RolUsuario.administrador ? tienePistaActiva : activaConfigurada;
 
   PistaLocal? get activa => _activaId == null ? null : porId(_activaId!);
 

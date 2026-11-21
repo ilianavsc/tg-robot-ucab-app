@@ -118,13 +118,6 @@ class _PantallaLoginState extends State<PantallaLogin> {
     if (mounted) setState(() => _error = null);
   }
 
-  /// Regla de acceso: el Operador solo entra con una pista **configurada**; el
-  /// Administrador puede entrar con cualquier pista activa.
-  bool _puedeEntrar(CatalogoPistas catalogo) =>
-      catalogo.activaConfigurada ||
-      (catalogo.tienePistaActiva &&
-          _rolSeleccionado == RolUsuario.administrador);
-
   void _cambiarRol(RolUsuario rol) {
     if (_rolSeleccionado == rol) return;
     setState(() {
@@ -141,7 +134,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
       );
       return;
     }
-    if (!_puedeEntrar(catalogo)) {
+    if (!catalogo.puedeIniciarSesion(_rolSeleccionado)) {
       setState(
         () => _error =
             'La pista activa está pendiente de escaneo: el Operador necesita '
@@ -316,7 +309,9 @@ class _PantallaLoginState extends State<PantallaLogin> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          onPressed: _puedeEntrar(catalogo) ? _entrar : null,
+                          onPressed: catalogo.puedeIniciarSesion(_rolSeleccionado)
+                              ? _entrar
+                              : null,
                           child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
