@@ -107,7 +107,7 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
                 ),
                 const SizedBox(height: 12),
               ],
-              if (!admin || dev) ...<Widget>[
+              if (admin && dev) ...<Widget>[
                 TarjetaSesionActual(sesion: sesion, servicio: servicio),
                 const SizedBox(height: 12),
                 TarjetaEnlaceMqtt(servicio: servicio),

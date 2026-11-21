@@ -116,11 +116,18 @@ Future<void> _entrar(WidgetTester t, {required bool admin}) async {
   await _tocar(t, find.byKey(const Key('login-entrar')));
 }
 
-/// Solo el mapa y la opción de realizar un envío; nada técnico.
+/// Solo el mapa y la acción de recorrido (circuito cerrado, 0 torres); nada de
+/// entregas ni controles técnicos.
 void _esperaVistaLimpia() {
   expect(find.byKey(const Key('vista-limpia')), findsOneWidget);
   expect(find.byKey(const Key('mapa-pista')), findsOneWidget);
-  expect(find.byKey(const Key('nueva-solicitud')), findsOneWidget);
+  expect(find.byKey(const Key('iniciar-recorrido')), findsOneWidget);
+  expect(find.byKey(const Key('recorrido-subtitulo')), findsOneWidget);
+  expect(find.text('Circuito cerrado · recorrido completo'), findsOneWidget);
+  // Sin entregas ni solicitudes en pistas de 0 torres
+  expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
+  expect(find.text('Nueva solicitud'), findsNothing);
+  expect(find.byKey(const Key('confirmar-entrega')), findsNothing);
   // Controles del robot
   expect(find.byType(NavigationBar), findsNothing);
   expect(find.text('CONTROLES'), findsNothing);
@@ -198,17 +205,56 @@ void main() {
       await _cerrar(t, e);
     });
 
-    testWidgets('realizar envío abre la solicitud desde la vista limpia', (
-      WidgetTester t,
-    ) async {
-      final _Entorno e = await _montar(t);
-      await _entrar(t, admin: false);
-      await t.tap(find.byKey(const Key('nueva-solicitud')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 400));
-      expect(find.byKey(const Key('enviar-solicitud')), findsOneWidget);
-      await _cerrar(t, e);
-    });
+    testWidgets(
+      'Iniciar recorrido en circuito cerrado (0 torres) arranca vuelta completa sin entregas',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        await _entrar(t, admin: false);
+        expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
+        await t.tap(find.byKey(const Key('iniciar-recorrido')));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 300));
+        expect(e.servicio.simulando, isTrue);
+        expect(e.servicio.pista!.modoVueltaCompleta, isTrue);
+        expect(e.servicio.pista!.vueltaEnCurso, isTrue);
+        // Al completar la vuelta simulada vuelve al inicio y se detiene
+        e.servicio.pista!.avanzar(40);
+        await t.pump(const Duration(milliseconds: 200));
+        expect(e.servicio.pista!.vueltaCompletada, isTrue);
+        expect(e.servicio.pista!.posicionM, closeTo(0.0, 0.05));
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
+
+    testWidgets(
+      'pista con >= 1 torre (Entrega a laboratorio) sí muestra Nueva solicitud',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        final PistaLocal p = e.catalogo.agregarPista(
+          nombre: 'Pista con Torre',
+          longitudM: 9.0,
+          torresControl: 1,
+        )!;
+        e.catalogo.completarEscaneo(
+          p.id,
+          MetricasPista(
+            largoM: 9.0,
+            puntosControlM: puntosControlPara(9.0),
+            segmentosValidados: const <bool>[true, true, true],
+          ),
+        );
+        await t.pump(const Duration(milliseconds: 100));
+        await _entrar(t, admin: false);
+        expect(find.byKey(const Key('iniciar-recorrido')), findsNothing);
+        expect(find.byKey(const Key('nueva-solicitud')), findsOneWidget);
+        await t.tap(find.byKey(const Key('nueva-solicitud')));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 400));
+        expect(find.byKey(const Key('enviar-solicitud')), findsOneWidget);
+        await _cerrar(t, e);
+      },
+    );
   });
 
   group('Interruptor Modo Desarrollador', () {

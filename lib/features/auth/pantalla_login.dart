@@ -416,17 +416,32 @@ class _PantallaLoginState extends State<PantallaLogin> {
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  p.nombre,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: CockpitText.bodySm.copyWith(
-                                    color: p.id == catalogo.activaId
-                                        ? Colors.white
-                                        : CockpitColors.onSurface,
-                                    fontWeight: p.id == catalogo.activaId
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      p.nombre,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: CockpitText.bodySm.copyWith(
+                                        color: p.id == catalogo.activaId
+                                            ? Colors.white
+                                            : CockpitColors.onSurface,
+                                        fontWeight: p.id == catalogo.activaId
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                    if (p.esCircuitoCerrado)
+                                      Text(
+                                        p.tipoViaje.etiqueta,
+                                        key: Key('pista-tipo-${p.id}'),
+                                        style: CockpitText.telemetrySm.copyWith(
+                                          fontSize: 10,
+                                          color: CockpitColors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 8),

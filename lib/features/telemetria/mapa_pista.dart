@@ -188,10 +188,14 @@ class PintorPista extends CustomPainter {
     this.zona = ZonaSonar.sinDatos,
     this.puntosRuta = const <double>[],
     this.trazado,
+    this.vueltaCompleta = false,
+    this.vueltaCompletada = false,
   });
 
   /// Pista que se dibuja (`null` = canónica de 9,0 m).
   final TrazadoPista? trazado;
+  final bool vueltaCompleta;
+  final bool vueltaCompletada;
 
   final DestinoPista destino;
   final double? fraccionRobot;
@@ -236,10 +240,14 @@ class PintorPista extends CustomPainter {
       final double ini = fraccionInicioTramo ?? f;
       final double fin = fraccionDeDestino(destino);
       // Ya recorrido: punteada muy tenue (borrado progresivo)
-      _fantasma(canvas, tramoDelCircuito(g.metrica, ini, f));
-      // Pendiente hacia el destino: iluminado en turquesa
-      if (_distanciaAdelante(f, fin) > 0.002) {
-        _pistaIluminada(canvas, tramoDelCircuito(g.metrica, f, fin));
+      if (vueltaCompleta && !vueltaCompletada && f < 0.002) {
+        _pistaIluminada(canvas, g.camino);
+      } else {
+        _fantasma(canvas, tramoDelCircuito(g.metrica, ini, f));
+        // Pendiente hacia el destino: iluminado en turquesa
+        if (_distanciaAdelante(f, fin) > 0.002) {
+          _pistaIluminada(canvas, tramoDelCircuito(g.metrica, f, fin));
+        }
       }
     }
 
@@ -486,6 +494,8 @@ class PintorPista extends CustomPainter {
       v.zona != zona ||
       v.trazado?.id != trazado?.id ||
       v.trazado?.largoM != trazado?.largoM ||
+      v.vueltaCompleta != vueltaCompleta ||
+      v.vueltaCompletada != vueltaCompletada ||
       !listEquals(v.puntosRuta, puntosRuta);
 }
 
@@ -755,6 +765,8 @@ class _Mapa extends StatelessWidget {
                       zona: zona,
                       puntosRuta: puntosRuta,
                       trazado: trazado,
+                      vueltaCompleta: s?.modoVueltaCompleta ?? false,
+                      vueltaCompletada: s?.vueltaCompletada ?? false,
                     ),
                   ),
                 ),

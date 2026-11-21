@@ -25,6 +25,22 @@ enum EstadoPista {
   final String etiqueta;
 }
 
+/// Tipo de viaje soportado por la pista según sus torres de control BLE.
+///
+/// * [circuitoCerrado] (`torresControl == 0`): solo recorrido completo en
+///   circuito cerrado, sin entregas ni destinos de laboratorio.
+/// * [entregaLaboratorio] (`torresControl >= 1`): reservado para la siguiente
+///   fase con torre de control y retorno.
+enum TipoViajePista {
+  circuitoCerrado('circuito_cerrado', 'Circuito cerrado'),
+  entregaLaboratorio('entrega_laboratorio', 'Entrega a laboratorio');
+
+  const TipoViajePista(this.clave, this.etiqueta);
+
+  final String clave;
+  final String etiqueta;
+}
+
 /// Métricas base que deja el escaneo del Gemelo Digital (modo básico).
 ///
 /// Todo es **simulación (SIL)**: el largo sale de la odometría simulada, el
@@ -100,6 +116,14 @@ class PistaLocal {
   final MetricasPista? metricas;
 
   bool get configurada => estado == EstadoPista.configurada;
+
+  /// Tipo de viaje según `torresControl`: `0` = circuito cerrado (sin
+  /// entregas), `>= 1` = entrega a laboratorio.
+  TipoViajePista get tipoViaje => torresControl == 0
+      ? TipoViajePista.circuitoCerrado
+      : TipoViajePista.entregaLaboratorio;
+
+  bool get esCircuitoCerrado => tipoViaje == TipoViajePista.circuitoCerrado;
 
   PistaLocal copiarCon({
     double? longitudM,
@@ -179,6 +203,7 @@ class CatalogoPistas extends ChangeNotifier {
   PistaLocal? agregarPista({
     required String nombre,
     required double longitudM,
+    int torresControl = 0,
   }) {
     final String limpio = nombre.trim();
     if (limpio.isEmpty || longitudM < 1.0 || longitudM > 50.0) return null;
@@ -186,6 +211,7 @@ class CatalogoPistas extends ChangeNotifier {
       id: 'P${_contador++}',
       nombre: limpio,
       longitudM: double.parse(longitudM.toStringAsFixed(2)),
+      torresControl: torresControl < 0 ? 0 : torresControl,
     );
     _pistas.add(nueva);
     _activaId = nueva.id;

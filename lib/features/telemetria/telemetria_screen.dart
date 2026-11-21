@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/estado.dart';
 import '../../core/mqtt/mqtt_service.dart';
 import '../../core/theme/cockpit_theme.dart';
+import '../auth/catalogo_pistas.dart';
 import '../auth/sesion_local.dart';
 import '../perfil/pantalla_perfil.dart';
 import 'alertas_p11.dart';
@@ -41,6 +42,19 @@ class TelemetriaScreen extends StatefulWidget {
       return Provider.of<SesionLocal>(context).modoDesarrollador;
     } on ProviderNotFoundException {
       return true;
+    }
+  }
+
+  /// `true` cuando la pista activa es de circuito cerrado (`torresControl == 0`,
+  /// solo recorrido completo, sin entregas ni destinos de laboratorio).
+  /// Sin `CatalogoPistas` en el árbol (pruebas de componentes aisladas) devuelve
+  /// `false` para no alterar las pruebas unitarias del flujo de pedidos.
+  static bool esCircuitoCerrado(BuildContext context) {
+    try {
+      final CatalogoPistas catalogo = Provider.of<CatalogoPistas>(context);
+      return catalogo.activa?.esCircuitoCerrado ?? true;
+    } on ProviderNotFoundException {
+      return false;
     }
   }
 
@@ -157,6 +171,7 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
     final MqttService servicio = context.watch<MqttService>();
     final int pendientes = servicio.centroAlertas.pendientes;
     final bool tecnico = TelemetriaScreen.vistaTecnica(context);
+    final bool circuitoCerrado = TelemetriaScreen.esCircuitoCerrado(context);
     // Al apagar el Modo Desarrollador se vuelve a la vista principal.
     if (!tecnico) _indice = 0;
 
@@ -165,7 +180,9 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
       child: Scaffold(
       appBar: CockpitAppBar(
         servicio: servicio,
-        seccion: tecnico ? _secciones[_indice].nombre : 'MAPA Y ENVÍOS',
+        seccion: tecnico
+            ? _secciones[_indice].nombre
+            : (circuitoCerrado ? 'MAPA Y RECORRIDO' : 'MAPA Y ENVÍOS'),
         alAjustes: tecnico ? _abrirConexion : null,
         alPerfil: _abrirPerfil,
         tecnico: tecnico,

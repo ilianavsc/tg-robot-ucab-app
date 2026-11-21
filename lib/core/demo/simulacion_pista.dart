@@ -137,6 +137,9 @@ class SimulacionPista {
   double _inicioTramoM = 0; // dónde empezó el tramo actual (m)
   double _esperaDestino = 0;
   bool _enDestino = false;
+  bool _modoVueltaCompleta = false;
+  double _odoInicioVuelta = 0;
+  bool _vueltaCompletada = false;
 
   // manual
   double _manualVIzq = 0;
@@ -221,6 +224,21 @@ class SimulacionPista {
       ? 1.0
       : (1 - distanciaAlDestino / _tramoTotal).clamp(0.0, 1.0);
 
+  /// `true` cuando corre en modo circuito cerrado (vuelta completa al inicio).
+  bool get modoVueltaCompleta => _modoVueltaCompleta;
+
+  /// `true` mientras ejecuta una vuelta completa en circuito cerrado.
+  bool get vueltaEnCurso =>
+      _modoVueltaCompleta && _autonomo && !_vueltaCompletada;
+
+  /// `true` cuando completó la vuelta cerrada y regresó al inicio.
+  bool get vueltaCompletada => _vueltaCompletada;
+
+  /// Avance de la vuelta completa (0..1).
+  double get progresoVuelta => !_modoVueltaCompleta
+      ? progresoTramo
+      : ((_odo - _odoInicioVuelta) / longitudM).clamp(0.0, 1.0);
+
   FaseMision get fase {
     if (frenteBloqueado && (_autonomo || _ordenDeMovimiento)) {
       return FaseMision.bloqueada;
@@ -295,12 +313,41 @@ class SimulacionPista {
 
   /// Cambia el destino. Si ya estaba en marcha autónoma, sigue hacia el nuevo.
   void elegirDestino(DestinoPista d) {
+    _modoVueltaCompleta = false;
+    _vueltaCompletada = false;
     _destino = d;
     _enDestino = false;
     _esperaDestino = 0;
     _tramoTotal = distanciaAlDestino;
     _inicioTramoM = posicionM;
     _registrar('Destino: ${d.nombre}');
+  }
+
+  /// Inicia una vuelta completa en circuito cerrado desde el inicio (0,0 m)
+  /// hasta regresar al punto de partida, deteniéndose al cerrar el lazo.
+  void iniciarVueltaCompleta() {
+    _modoVueltaCompleta = true;
+    _vueltaCompletada = false;
+    _autonomo = true;
+    _enDestino = false;
+    _esperaDestino = 0;
+    _manualRestante = 0;
+    _timeout = false;
+    _ordenDeMovimiento = false;
+    _obsOdo = null;
+    _obsSeRetira = false;
+    _tSinObstaculo = 0;
+    _tBloqueado = 0;
+    _tBajoUmbral = 0;
+    _bloqueado = false;
+    _destino = DestinoPista.cuartoComponentes;
+    _odo = 0;
+    _odoInicioVuelta = 0;
+    _inicioTramoM = 0;
+    _tramoTotal = longitudM;
+    _registrar(
+      'Recorrido iniciado · circuito cerrado (${longitudM.toStringAsFixed(2)} m)',
+    );
   }
 
   // ---------------------------------------------------------- simulación
@@ -390,11 +437,29 @@ class SimulacionPista {
   }
 
   double _velocidadHaciaDestino() {
-    // Frena suave al acercarse a la estación (mínimo 0,06 m/s).
-    return math.min(velocidadCrucero, math.max(0.06, 0.8 * distanciaAlDestino));
+    final double restante = _modoVueltaCompleta
+        ? math.max(0.0, longitudM - (_odo - _odoInicioVuelta))
+        : distanciaAlDestino;
+    // Frena suave al acercarse al destino / cierre (mínimo 0,06 m/s).
+    return math.min(velocidadCrucero, math.max(0.06, 0.8 * restante));
   }
 
   void _gestionarDestino(double dt) {
+    if (_modoVueltaCompleta) {
+      if (_vueltaCompletada) return;
+      final double restante = longitudM - (_odo - _odoInicioVuelta);
+      if (restante <= 0.03 && _v.abs() < 0.12) {
+        _vueltaCompletada = true;
+        _enDestino = true;
+        _autonomo = false;
+        _v = 0;
+        _vIzq = 0;
+        _vDer = 0;
+        _odo = _odoInicioVuelta + longitudM;
+        _registrar('Recorrido completado · regreso al inicio');
+      }
+      return;
+    }
     if (_enDestino) {
       _esperaDestino -= dt;
       if (_esperaDestino <= 0) {

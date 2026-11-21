@@ -344,6 +344,9 @@ void main() {
       expect(c.activaConfigurada, isTrue);
       final PistaLocal a = c.activa!;
       expect(a.estado, EstadoPista.configurada);
+      expect(a.torresControl, 0);
+      expect(a.tipoViaje, TipoViajePista.circuitoCerrado);
+      expect(a.esCircuitoCerrado, isTrue);
       expect(a.metricas!.completa, isTrue);
       expect(a.metricas!.puntosControlM.length, 3);
       expect(a.metricas!.segmentosValidados, <bool>[true, true, true]);
@@ -353,12 +356,23 @@ void main() {
       );
       expect(basica, isNotNull);
       expect(basica!.torresControl, 0);
+      expect(basica.tipoViaje, TipoViajePista.circuitoCerrado);
+      expect(basica.esCircuitoCerrado, isTrue);
       expect(basica.estado, EstadoPista.pendiente);
       expect(basica.configurada, isFalse);
       expect(basica.metricas, isNull);
-      expect(c.activa!.nombre, 'Laboratorio 2');
+      final PistaLocal? conTorre = c.agregarPista(
+        nombre: 'Laboratorio Torre 1',
+        longitudM: 9.0,
+        torresControl: 1,
+      );
+      expect(conTorre, isNotNull);
+      expect(conTorre!.torresControl, 1);
+      expect(conTorre.tipoViaje, TipoViajePista.entregaLaboratorio);
+      expect(conTorre.esCircuitoCerrado, isFalse);
+      expect(c.activa!.nombre, 'Laboratorio Torre 1');
       expect(c.activaConfigurada, isFalse);
-      expect(c.pistas.length, 2);
+      expect(c.pistas.length, 3);
       expect(c.agregarPista(nombre: '  ', longitudM: 5), isNull);
       c.dispose();
     });
@@ -393,6 +407,8 @@ void main() {
         );
         await _tocar(t, find.byKey(const Key('login-pistas')));
         expect(find.byKey(const Key('pista-item-A')), findsOneWidget);
+        expect(find.byKey(const Key('pista-tipo-A')), findsOneWidget);
+        expect(find.text('Circuito cerrado'), findsOneWidget);
         expect(find.byKey(const Key('pista-item-B')), findsNothing);
         expect(find.byKey(const Key('pista-pendiente-A')), findsNothing);
         expect(find.byKey(const Key('pista-nueva')), findsOneWidget);
@@ -584,19 +600,20 @@ void main() {
       expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
       expect(find.text('@usuario'), findsOneWidget);
       expect(find.text('Operador'), findsWidgets);
-      expect(find.text('SESIÓN ACTUAL'), findsOneWidget);
-      expect(find.text('ENLACE MQTT'), findsOneWidget);
+      expect(find.byKey(const Key('perfil-cerrar')), findsOneWidget);
+      // Sin información de tipo de conexión ni telemetría técnica para Operador
+      expect(find.text('SESIÓN ACTUAL'), findsNothing);
+      expect(find.text('ENLACE MQTT'), findsNothing);
+      expect(find.textContaining('MQTT'), findsNothing);
+      expect(find.textContaining('Broker'), findsNothing);
+      expect(find.textContaining('Wi-Fi'), findsNothing);
+      expect(find.textContaining('BLE'), findsNothing);
+      expect(find.byKey(const Key('perfil-broker')), findsNothing);
+      expect(find.byKey(const Key('perfil-latencia')), findsNothing);
       // Solo Admin: Fail-Safe, gestión de usuarios y CSV
       expect(find.byKey(const Key('perfil-failsafe')), findsNothing);
       expect(find.text('Gestión de Usuarios'), findsNothing);
       expect(find.byKey(const Key('perfil-exportar')), findsNothing);
-      // Datos reales o "--": sin conexión no hay broker ni latencia
-      expect(find.text('MQTT: Desconectado (--)'), findsOneWidget);
-      expect(t.widget<Text>(find.byKey(const Key('perfil-broker'))).data, '--');
-      expect(
-        t.widget<Text>(find.byKey(const Key('perfil-latencia'))).data,
-        '--',
-      );
       expect(t.takeException(), isNull);
       await _cerrar(t, e);
     });
@@ -656,11 +673,16 @@ void main() {
           find.byKey(const Key('perfil-modo-desarrollador')),
           findsOneWidget,
         );
-        // Ocultos con modoDesarrollador == false
+        // Ocultos con modoDesarrollador == false (incluye tipo de conexión)
         expect(find.byKey(const Key('perfil-failsafe')), findsNothing);
         expect(find.byKey(const Key('perfil-aprendizaje')), findsNothing);
         expect(find.text('ANALÍTICA DE SESIÓN (P12)'), findsNothing);
         expect(find.byKey(const Key('perfil-exportar')), findsNothing);
+        expect(find.text('ENLACE MQTT'), findsNothing);
+        expect(find.text('SESIÓN ACTUAL'), findsNothing);
+        expect(find.textContaining('MQTT'), findsNothing);
+        expect(find.byKey(const Key('perfil-broker')), findsNothing);
+        expect(find.byKey(const Key('perfil-latencia')), findsNothing);
         // Al activar Modo Desarrollador vuelven a aparecer
         await _tocar(t, find.byKey(const Key('perfil-modo-desarrollador')));
         expect(e.sesion.modoDesarrollador, isTrue);
@@ -669,6 +691,9 @@ void main() {
         expect(find.byKey(const Key('perfil-usuarios')), findsOneWidget);
         await _mostrar(t, find.byKey(const Key('perfil-exportar')));
         expect(find.text('ANALÍTICA DE SESIÓN (P12)'), findsOneWidget);
+        await _mostrar(t, find.byKey(const Key('perfil-broker')));
+        expect(find.text('ENLACE MQTT'), findsOneWidget);
+        expect(find.byKey(const Key('perfil-latencia')), findsOneWidget);
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
       },

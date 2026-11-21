@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/alertas/centro_alertas.dart';
+import '../../core/demo/simulacion_pista.dart';
 import '../../core/models/estado.dart';
 import '../../core/models/ultrasonido.dart';
 import '../../core/mqtt/mqtt_service.dart';
 import '../../core/theme/cockpit_theme.dart';
+import '../auth/catalogo_pistas.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
 import 'conexion_cockpit.dart';
@@ -15,6 +17,7 @@ import 'formulario_solicitud.dart';
 import 'mapa_pista.dart';
 import 'radar_hud.dart';
 import 'solicitud_activa.dart';
+import 'telemetria_screen.dart';
 
 /// **Dashboard**: estado del robot, enlace MQTT, energía 3S, línea (4×
 /// TCRT5000), motores, obstáculos y analítica de sesión.
@@ -36,6 +39,8 @@ class PantallaDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     final MqttService servicio = context.watch<MqttService>();
     final SolicitudActiva solicitud = context.watch<SolicitudActiva>();
+    final bool circuitoCerrado = TelemetriaScreen.esCircuitoCerrado(context);
+    final PistaLocal? pistaActiva = context.watch<CatalogoPistas?>()?.activa;
     final Estado? e = servicio.ultimoEstado;
     final Ultrasonido? u = servicio.ultimoUltrasonido;
     final bool sin = estadoSinSenal(e);
@@ -47,7 +52,10 @@ class PantallaDashboard extends StatelessWidget {
         children: <Widget>[
           const TarjetaMapaPista(tecnico: false),
           const SizedBox(height: 12),
-          _TarjetaPedido(servicio: servicio, solicitud: solicitud),
+          if (circuitoCerrado)
+            _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
+          else
+            _TarjetaPedido(servicio: servicio, solicitud: solicitud),
         ],
       );
     }
@@ -63,8 +71,11 @@ class PantallaDashboard extends StatelessWidget {
         // Vista principal: Mapa de Pista con misión, destinos y pausa.
         const TarjetaMapaPista(),
         const SizedBox(height: 12),
-        // Flujo de pedido: crear solicitud o seguir la misión activa.
-        _TarjetaPedido(servicio: servicio, solicitud: solicitud),
+        // En circuito cerrado (0 torres): recorrido completo; con >= 1 torre: pedido.
+        if (circuitoCerrado)
+          _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
+        else
+          _TarjetaPedido(servicio: servicio, solicitud: solicitud),
         const SizedBox(height: 12),
         CockpitColumnas(
           children: <Widget>[
@@ -139,6 +150,84 @@ class _DetalleTecnico extends StatelessWidget {
             _TarjetaMotores(estado: estado, sin: sin),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta de recorrido para pistas en **Circuito cerrado** (`torresControl == 0`):
+/// sin entregas ni destinos de laboratorio, solo la acción de completar la vuelta
+/// y regresar al inicio.
+class _TarjetaRecorrido extends StatelessWidget {
+  const _TarjetaRecorrido({required this.servicio, required this.pista});
+
+  final MqttService servicio;
+  final PistaLocal? pista;
+
+  void _iniciar(BuildContext context) {
+    final double largo = pista?.longitudM ?? largoCanonicoM;
+    if (servicio.conectado) {
+      enviarOrden(context, servicio, 'auto');
+    } else {
+      servicio.iniciarRecorridoCircuito(longitudM: largo);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SimulacionPista? sim = servicio.pista;
+    final bool enCurso = sim != null && sim.vueltaEnCurso;
+    final bool completado = sim != null && sim.vueltaCompletada;
+    final int pct = sim == null ? 0 : (sim.progresoVuelta * 100).round();
+
+    return CockpitCard(
+      key: const Key('tarjeta-recorrido'),
+      borde: enCurso
+          ? CockpitColors.primary.withValues(alpha: 0.45)
+          : (completado ? CockpitColors.ok.withValues(alpha: 0.45) : null),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SectionLabel(
+            icono: Icons.route,
+            etiqueta: 'Recorrido',
+            trailing: enCurso
+                ? StatusPill(texto: 'En curso · $pct%', color: CockpitColors.primary)
+                : (completado
+                      ? const StatusPill(texto: 'Completado', color: CockpitColors.ok)
+                      : null),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Circuito cerrado · recorrido completo',
+            key: const Key('recorrido-subtitulo'),
+            style: CockpitText.bodySm.copyWith(
+              color: CockpitColors.onSurfaceVariant,
+            ),
+          ),
+          if (enCurso) ...<Widget>[
+            const SizedBox(height: 10),
+            ProgressTrack(
+              fraccion: sim.progresoVuelta,
+              color: CockpitColors.primary,
+              alto: 6,
+            ),
+          ] else if (completado) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              'Recorrido completado · regreso al inicio',
+              key: const Key('recorrido-estado'),
+              style: CockpitText.bodySm.copyWith(color: CockpitColors.ok),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const Key('iniciar-recorrido'),
+            onPressed: enCurso ? null : () => _iniciar(context),
+            icon: Icon(enCurso ? Icons.sync : Icons.play_arrow_rounded),
+            label: Text(enCurso ? 'Recorrido en curso' : 'Iniciar recorrido'),
+          ),
+        ],
       ),
     );
   }

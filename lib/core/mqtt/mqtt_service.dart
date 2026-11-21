@@ -377,6 +377,19 @@ class MqttService extends ChangeNotifier {
     _temporizadorDemo = Timer.periodic(_periodoDemo, (_) => _tickDemo());
   }
 
+  /// Inicia un recorrido completo en circuito cerrado (vuelta completa y
+  /// regreso al inicio). Si no había simulación activa, la arranca sobre la
+  /// pista de [longitudM] metros.
+  void iniciarRecorridoCircuito({double longitudM = largoCanonicoM}) {
+    if (_descartado) return;
+    if (!_simulando || _pista == null || (_pista!.longitudM - longitudM).abs() > 0.01) {
+      iniciarSimulacion(longitudM: longitudM);
+    }
+    _pista?.iniciarVueltaCompleta();
+    _actualizarDemo(0);
+    if (!_descartado) notifyListeners();
+  }
+
   /// Detiene el Modo Demo y reinicia explícitamente los valores de telemetría y
   /// ultrasonidos a un estado base en cero (0 %, 0.00 V, 0.0 mm, 0.00 m/s,
   /// #0, 00:00 y 0 cm 'Sin señal'), sin dejar datos residuales de la simulación.
