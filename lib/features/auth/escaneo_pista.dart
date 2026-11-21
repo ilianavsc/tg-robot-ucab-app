@@ -17,7 +17,7 @@ enum EtapaEscaneo {
   ),
   viaje1('Viaje 1/3', 'Verifica el segmento 1 (Inicio → PC1)'),
   viaje2('Viaje 2/3', 'Verifica el segmento 2 (PC1 → PC2)'),
-  viaje3('Viaje 3/3', 'Verifica el segmento 3 (PC2 → PC3 / cierre)'),
+  viaje3('Viaje 3/3', 'Verifica el segmento 3 (PC2 → PC3 → cierre)'),
   completado('Completado', 'Pista configurada');
 
   const EtapaEscaneo(this.titulo, this.detalle);
@@ -103,7 +103,7 @@ class EscaneoPista extends ChangeNotifier {
     return switch (_etapa) {
       EtapaEscaneo.viaje1 => (0, pc[0]),
       EtapaEscaneo.viaje2 => (pc[0], pc[1]),
-      EtapaEscaneo.viaje3 => (pc[1], pc[2]),
+      EtapaEscaneo.viaje3 => (pc[1], l),
       _ => (0, l),
     };
   }

@@ -3,10 +3,13 @@ import 'dart:math' as math;
 import '../alertas/centro_alertas.dart';
 import '../models/estado.dart';
 import '../models/ultrasonido.dart';
+import '../pistas/trazado_pista.dart';
 
-/// Estaciones del trayecto del proyecto: sale del Cuarto de Componentes
-/// (inicio), pasa por un Punto de Control (intermedio) y llega al
-/// Laboratorio 1 (destino).
+/// Estaciones del trayecto del proyecto sobre la pista canónica
+/// (`specs/pista_canonica.json`): sale del Cuarto de Componentes (0,0 m,
+/// baliza B1), pasa por el Punto de Control (PC1, 3,0 m) y se detiene en el
+/// Laboratorio 1 al detectar la baliza B2 (PC3, 7,5 m). El circuito cerrado de
+/// SIM1/SIM2 vuelve a la salida en 9,0 m.
 enum DestinoPista {
   cuartoComponentes(
     'CUARTO DE COMPONENTES',
@@ -63,22 +66,33 @@ class EventoSim {
 /// Lo que NO modela, porque el robot no lo tiene: LiDAR, brújula/rumbo ni
 /// localización absoluta. La posición sobre el mapa es la odometría simulada.
 class SimulacionPista {
-  SimulacionPista() {
+  /// Simulación sobre un circuito de [longitudM] metros (por defecto la pista
+  /// canónica de 9,0 m; la Pista A mide 8,05 m).
+  SimulacionPista({this.longitudM = largoCanonicoM})
+    : posiciones = posicionesPara(longitudM) {
     _tramoTotal = distanciaAlDestino;
   }
 
   // --------------------------------------------------------- constantes
 
-  /// Longitud del circuito simulado (m). Canónica: 9,0 m (specs/pista_canonica.json).
-  static const double longitudM = 9.0;
+  /// Longitud del circuito simulado (m).
+  final double longitudM;
 
   /// Posición de cada nodo sobre el circuito (m desde la base, en el sentido
   /// de marcha).
-  static const Map<DestinoPista, double> posiciones = <DestinoPista, double>{
-    DestinoPista.cuartoComponentes: 0.0,
-    DestinoPista.puntoControl: 3.78,
-    DestinoPista.laboratorio1: 6.3,
-  };
+  final Map<DestinoPista, double> posiciones;
+
+  /// Estaciones de un circuito de [largoM] metros: Cuarto de Componentes en la
+  /// salida, Punto de Control en PC1 y Laboratorio 1 en PC3. Con 9,0 m son
+  /// 0,0 / 3,0 / 7,5 m (`specs/pista_canonica.json`).
+  static Map<DestinoPista, double> posicionesPara(double largoM) {
+    final List<double> pc = puntosControlPara(largoM);
+    return <DestinoPista, double>{
+      DestinoPista.cuartoComponentes: 0.0,
+      DestinoPista.puntoControl: pc[0],
+      DestinoPista.laboratorio1: pc[2],
+    };
+  }
 
   static const double velocidadCrucero = 0.40;
   static const double velocidadManual = 0.40;

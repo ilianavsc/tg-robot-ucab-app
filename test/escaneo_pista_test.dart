@@ -24,7 +24,7 @@ void main() {
       final MetricasPista m = s.metricas!;
       expect(m.completa, isTrue);
       expect(m.largoM, closeTo(9.0, 0.01));
-      expect(m.puntosControlM, <double>[3.0, 6.0, 9.0]);
+      expect(m.puntosControlM, <double>[3.0, 4.5, 7.5]); // specs
       expect(m.segmentosValidados, <bool>[true, true, true]);
       expect(m.firmaParedesCm.length, 3);
       expect(s.tiemposViajeS.length, 3);
@@ -43,12 +43,12 @@ void main() {
       expect(s.puntosControlM, isEmpty);
       s.avanzar(s.duracionEtapaS + 0.01);
       expect(s.etapa, EtapaEscaneo.viaje1);
-      expect(s.puntosControlM, <double>[2.0, 4.0, 6.0]);
+      expect(s.puntosControlM, <double>[2.0, 3.0, 5.0]); // 3/9, 4,5/9, 7,5/9
       expect(s.tramoActual, (0.0, 2.0));
       expect(s.segmentosValidados, <bool>[false, false, false]);
       s.avanzar(s.duracionEtapaS + 0.01);
       expect(s.etapa, EtapaEscaneo.viaje2);
-      expect(s.tramoActual, (2.0, 4.0));
+      expect(s.tramoActual, (2.0, 3.0));
       expect(s.segmentosValidados, <bool>[true, false, false]);
       s.dispose();
     });

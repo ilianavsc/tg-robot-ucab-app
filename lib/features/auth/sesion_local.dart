@@ -26,6 +26,7 @@ class SesionLocal extends ChangeNotifier {
   String _nombre = '';
   bool _demo = false;
   DateTime? _inicio;
+  bool _modoDesarrollador = false;
 
   /// `null` mientras no haya iniciado sesión (se muestra el Login).
   RolUsuario? get rol => _rol;
@@ -39,6 +40,23 @@ class SesionLocal extends ChangeNotifier {
 
   /// `true` si se entró con el botón "Modo Demo (Offline)".
   bool get demo => _demo;
+
+  /// **Modo Desarrollador** (solo Administrador): muestra los controles del
+  /// robot, la conexión y las herramientas técnicas. Arranca apagado en cada
+  /// sesión y se apaga al cerrarla; con el Operador siempre es `false`.
+  bool get modoDesarrollador =>
+      _rol == RolUsuario.administrador && _modoDesarrollador;
+
+  /// Enciende o apaga el Modo Desarrollador. Solo tiene efecto con una sesión
+  /// de Administrador; devuelve `false` si no se aplicó.
+  bool cambiarModoDesarrollador(bool activo) {
+    if (_rol != RolUsuario.administrador) return false;
+    if (_modoDesarrollador != activo) {
+      _modoDesarrollador = activo;
+      notifyListeners();
+    }
+    return true;
+  }
 
   /// Momento en que se inició la sesión local.
   DateTime? get inicio => _inicio;
@@ -62,6 +80,7 @@ class SesionLocal extends ChangeNotifier {
     _nombre = (nombre ?? '').trim().isEmpty ? rol.nombre : nombre!.trim();
     _demo = demo;
     _inicio = ahora ?? DateTime.now();
+    _modoDesarrollador = false;
     notifyListeners();
   }
 
@@ -72,6 +91,7 @@ class SesionLocal extends ChangeNotifier {
     _nombre = '';
     _demo = false;
     _inicio = null;
+    _modoDesarrollador = false;
     notifyListeners();
   }
 }

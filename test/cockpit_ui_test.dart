@@ -36,14 +36,18 @@ Future<MqttService> _montar(
   double ancho = 390,
   double alto = 844,
   bool admin = false,
+  bool tecnico = true,
 }) async {
   t.view.physicalSize = Size(ancho * 2, alto * 2);
   t.view.devicePixelRatio = 2;
   addTearDown(t.view.reset);
   final MqttService servicio = MqttService();
   final SesionLocal sesion = SesionLocal();
-  if (admin) {
+  // Estas pruebas cubren las herramientas técnicas: Administrador con el
+  // Modo Desarrollador encendido.
+  if (admin || tecnico) {
     sesion.iniciar(RolUsuario.administrador, usuario: 'admin');
+    sesion.cambiarModoDesarrollador(tecnico);
   }
   await t.pumpWidget(
     MultiProvider(

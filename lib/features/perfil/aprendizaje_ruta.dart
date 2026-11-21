@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/demo/simulacion_pista.dart';
+import '../../core/pistas/trazado_pista.dart';
 import '../auth/sesion_local.dart';
 
 /// Punto de la ruta guardada (estación o punto de control).
@@ -42,14 +43,16 @@ class AprendizajeRuta extends ChangeNotifier {
   static const double velocidadPasadaMs = 0.40;
 
   /// Largo del circuito simulado (m).
-  static double get longitudM => SimulacionPista.longitudM;
+  static double get longitudM => largoCanonicoM;
 
   /// Separación mínima entre dos puntos (m) y máximo de puntos de control.
   static const double separacionMinimaM = 0.5;
   static const int maxPuntosControl = 6;
 
   static List<PuntoRuta> _porDefecto() {
-    final Map<DestinoPista, double> p = SimulacionPista.posiciones;
+    final Map<DestinoPista, double> p = SimulacionPista.posicionesPara(
+      largoCanonicoM,
+    );
     return <PuntoRuta>[
       PuntoRuta(
         nombre: DestinoPista.cuartoComponentes.nombre,

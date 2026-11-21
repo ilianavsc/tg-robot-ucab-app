@@ -34,7 +34,9 @@ void main() {
         correr(s, 3); // rampa de aceleración
         double minV = 9, maxV = -9, maxX = 0, maxSalto = 0;
         double previa = s.vIzq;
-        correr(s, 5, (SimulacionPista p) {
+        // Crucero hasta ≈ 2,4 m: el Punto de Control (PC1) está a 3,0 m y el
+        // robot empieza a frenar 0,5 m antes.
+        correr(s, 3.5, (SimulacionPista p) {
           minV = [minV, p.vIzq, p.vDer].reduce((a, b) => a < b ? a : b);
           maxV = [maxV, p.vIzq, p.vDer].reduce((a, b) => a > b ? a : b);
           if (p.lineaMm.abs() > maxX) maxX = p.lineaMm.abs();
@@ -192,7 +194,7 @@ void main() {
       correr(s, 1.5);
       expect(s.velocidad, lessThan(-0.2));
       final double retroceso =
-          (antes - s.posicionM) % SimulacionPista.longitudM;
+          (antes - s.posicionM) % s.longitudM;
       expect(retroceso, inInclusiveRange(0.2, 2.0), reason: 'va hacia atrás');
 
       s.aplicarOrden('izquierda');
@@ -287,12 +289,13 @@ void main() {
         'PUNTO DE CONTROL',
         'LABORATORIO 1',
       ]);
+      final SimulacionPista sim = SimulacionPista();
       final List<double> pos = DestinoPista.values
-          .map((DestinoPista d) => SimulacionPista.posiciones[d]!)
+          .map((DestinoPista d) => sim.posiciones[d]!)
           .toList();
       expect(pos[0], 0, reason: 'el Cuarto de Componentes es el inicio');
       expect(pos[0] < pos[1] && pos[1] < pos[2], isTrue);
-      expect(pos[2], lessThan(SimulacionPista.longitudM));
+      expect(pos[2], lessThan(sim.longitudM));
       expect(SimulacionPista().destino, DestinoPista.puntoControl);
     });
 

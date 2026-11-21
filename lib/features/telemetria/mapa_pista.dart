@@ -9,53 +9,41 @@ import '../../core/demo/simulacion_pista.dart';
 import '../../core/models/estado.dart';
 import '../../core/models/ultrasonido.dart';
 import '../../core/mqtt/mqtt_service.dart';
+import '../../core/pistas/trazado_pista.dart';
 import '../../core/theme/cockpit_theme.dart';
+import '../auth/catalogo_pistas.dart';
 import '../perfil/aprendizaje_ruta.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
 
-/// Geometría del circuito cerrado (rectángulo de esquinas redondeadas) para un
-/// tamaño dado. Sale del mismo recorrido que usa la simulación: la fracción 0
-/// es el Cuarto de Componentes y el sentido de marcha es el de las agujas del reloj.
+/// Geometría del circuito para un lienzo dado. Dibuja el **trazado real**
+/// de la pista ([TrazadoPista]: la canónica de 9,0 m de SIM1/SIM2 por
+/// defecto, o el circuito histórico de 8,05 m de la Pista A) con su forma
+/// exacta, centrado y a escala. La fracción 0 es la salida (Cuarto de
+/// Componentes) y sigue el sentido de marcha.
 class PistaGeometria {
-  PistaGeometria(this.tamano) {
+  PistaGeometria(this.tamano, [TrazadoPista? trazado])
+    : trazado = trazado ?? TrazadoPista.canonica() {
     final double lado = math.min(tamano.width, tamano.height);
     final double margenX = math.max(28, tamano.width * 0.11);
     final double margenArriba = math.max(58, tamano.height * 0.17);
     final double margenAbajo = math.max(44, tamano.height * 0.14);
-    final Rect r = Rect.fromLTRB(
+    area = Rect.fromLTRB(
       margenX,
       margenArriba,
       tamano.width - margenX,
       tamano.height - margenAbajo,
     );
-    final double radio = math.min(r.width, r.height) * 0.28;
-    camino = Path()
-      ..moveTo(r.left, r.bottom - radio)
-      ..lineTo(r.left, r.top + radio)
-      ..arcToPoint(
-        Offset(r.left + radio, r.top),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.right - radio, r.top)
-      ..arcToPoint(
-        Offset(r.right, r.top + radio),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.right, r.bottom - radio)
-      ..arcToPoint(
-        Offset(r.right - radio, r.bottom),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.left + radio, r.bottom)
-      ..arcToPoint(
-        Offset(r.left, r.bottom - radio),
-        radius: Radius.circular(radio),
-      )
-      ..close();
+    camino = caminoEnLienzo(this.trazado, area);
     _metrica = camino.computeMetrics().first;
     escala = lado;
   }
+
+  /// Pista que se dibuja.
+  final TrazadoPista trazado;
+
+  /// Zona del lienzo donde cabe el circuito.
+  late final Rect area;
 
   final Size tamano;
   late final Path camino;
@@ -81,9 +69,20 @@ class PistaGeometria {
   double anguloEn(double fraccion) => _en(fraccion).angle;
 }
 
-/// Fracción del circuito de cada nodo.
+/// Fracción del circuito de cada nodo: Cuarto de Componentes en la salida,
+/// Punto de Control en PC1 (3,0 / 9,0) y Laboratorio 1 en PC3 (7,5 / 9,0).
+/// Es la misma en cualquier pista porque sus estaciones escalan con el largo.
 double fraccionDeDestino(DestinoPista d) =>
-    SimulacionPista.posiciones[d]! / SimulacionPista.longitudM;
+    SimulacionPista.posicionesPara(largoCanonicoM)[d]! / largoCanonicoM;
+
+/// Fracción de PC2 (fin del tramo sin línea, 4,5 / 9,0).
+double get fraccionPc2 => puntosControlCanonicosM[1] / largoCanonicoM;
+
+/// Separación (px) entre el trazado y la etiqueta de una estación. En la
+/// canónica (recta y estrecha) deja libre el barrido del cono del ultrasonido
+/// en las horquillas; en la Pista A (curvas y una S) va pegada al nodo.
+double _separacionEtiqueta(PistaGeometria g) =>
+    g.trazado.id == 'A' ? 18 : 52;
 
 Color colorDeZona(ZonaSonar z) {
   switch (z) {
@@ -111,30 +110,38 @@ Path tramoDelCircuito(PathMetric m, double desde, double hasta) {
   return m.extractPath(d, l)..addPath(m.extractPath(0, h), Offset.zero);
 }
 
-/// Rectángulo de la etiqueta de un nodo (con su "píldora" de fondo).
+/// Rectángulo de la etiqueta de un nodo (con su "píldora" de fondo): se
+/// coloca hacia fuera del lazo, perpendicular al trazado.
 Rect rectEtiquetaNodo(PistaGeometria g, DestinoPista d) {
-  final Offset p = g.puntoEn(fraccionDeDestino(d));
+  final double f = fraccionDeDestino(d);
+  final Offset p = g.puntoEn(f);
   final TextPainter tp = _textoEtiqueta(d, false)..layout();
   const double rx = 5, ry = 3;
   final double ancho = tp.width + 2 * rx;
   final double alto = tp.height + 2 * ry;
+  final double ang = g.anguloEn(f);
+  Offset n = Offset(-math.sin(ang), math.cos(ang));
+  if ((p - g.area.center).dx * n.dx + (p - g.area.center).dy * n.dy < 0) {
+    n = -n;
+  }
+  final double sep = _separacionEtiqueta(g);
   double x;
   double y;
-  switch (d) {
-    case DestinoPista.cuartoComponentes:
-      x = p.dx + 20; // a la derecha del nodo, dentro del lazo
-      y = p.dy - alto / 2;
-      break;
-    case DestinoPista.puntoControl:
-      x = p.dx - ancho + 8; // abajo-izquierda del nodo, dentro del lazo
-      y = p.dy + 22; // (a la derecha el recorrido baja por el borde del lazo)
-      break;
-    case DestinoPista.laboratorio1:
-      x = p.dx - ancho / 2; // debajo del nodo, fuera del lazo
-      y = p.dy + 20;
-      break;
+  // A un lado del nodo solo si cabe en el lienzo; si no, arriba o abajo.
+  final double xLado = n.dx < 0 ? p.dx - sep - ancho : p.dx + sep;
+  final bool cabeAlLado =
+      xLado >= 4 && xLado + ancho <= g.tamano.width - 4;
+  if (n.dy.abs() >= n.dx.abs() || !cabeAlLado) {
+    // Arriba o abajo del trazado, extendida hacia el extremo más cercano del
+    // lazo: dos estaciones en la misma recta no se pisan.
+    x = p.dx >= g.area.center.dx ? p.dx - 12 : p.dx + 12 - ancho;
+    y = n.dy < 0 ? p.dy - sep - alto : p.dy + sep;
+  } else {
+    x = xLado;
+    y = p.dy - alto / 2;
   }
-  x = x.clamp(4.0, g.tamano.width - ancho - 4);
+  x = x.clamp(4.0, math.max(4.0, g.tamano.width - ancho - 4));
+  y = y.clamp(4.0, math.max(4.0, g.tamano.height - alto - 4));
   return Rect.fromLTWH(x, y, ancho, alto);
 }
 
@@ -180,7 +187,11 @@ class PintorPista extends CustomPainter {
     this.frenteCm,
     this.zona = ZonaSonar.sinDatos,
     this.puntosRuta = const <double>[],
+    this.trazado,
   });
+
+  /// Pista que se dibuja (`null` = canónica de 9,0 m).
+  final TrazadoPista? trazado;
 
   final DestinoPista destino;
   final double? fraccionRobot;
@@ -197,7 +208,7 @@ class PintorPista extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final PistaGeometria g = PistaGeometria(size);
+    final PistaGeometria g = PistaGeometria(size, trazado);
 
     // Retícula tenue de fondo
     final Paint rejilla = Paint()
@@ -246,8 +257,12 @@ class PintorPista extends CustomPainter {
 
     // Puntos de control aprendidos (ruta guardada del Administrador)
     for (int i = 0; i < puntosRuta.length; i++) {
-      _puntoControl(canvas, g.puntoEn(puntosRuta[i]), i + 1);
+      _puntoControl(canvas, g.puntoEn(puntosRuta[i]), 'P${i + 1}');
     }
+
+    // PC2 de la especificación (PC1 y PC3 son el Punto de Control y el
+    // Laboratorio 1)
+    _puntoControl(canvas, g.puntoEn(fraccionPc2), 'PC2', arriba: true);
 
     // Nodos
     for (final DestinoPista d in DestinoPista.values) {
@@ -313,7 +328,12 @@ class PintorPista extends CustomPainter {
     }
   }
 
-  void _puntoControl(Canvas canvas, Offset p, int n) {
+  void _puntoControl(
+    Canvas canvas,
+    Offset p,
+    String texto, {
+    bool arriba = false,
+  }) {
     final Path rombo = Path()
       ..moveTo(p.dx, p.dy - 7)
       ..lineTo(p.dx + 7, p.dy)
@@ -330,7 +350,7 @@ class PintorPista extends CustomPainter {
     );
     final TextPainter tp = TextPainter(
       text: TextSpan(
-        text: 'P$n',
+        text: texto,
         style: mono(
           size: 9,
           peso: FontWeight.w700,
@@ -340,7 +360,7 @@ class PintorPista extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, p + Offset(-tp.width / 2, 9));
+    tp.paint(canvas, p + Offset(-tp.width / 2, arriba ? -9 - tp.height : 9));
   }
 
   void _nodo(Canvas canvas, PistaGeometria g, DestinoPista d) {
@@ -464,6 +484,8 @@ class PintorPista extends CustomPainter {
       v.obstaculo != obstaculo ||
       v.frenteCm != frenteCm ||
       v.zona != zona ||
+      v.trazado?.id != trazado?.id ||
+      v.trazado?.largoM != trazado?.largoM ||
       !listEquals(v.puntosRuta, puntosRuta);
 }
 
@@ -493,13 +515,23 @@ String textoSeguridad(ZonaSonar z) {
 /// absoluta (solo 4× TCRT5000 y 2× HC-SR04P), así que no se dibuja su posición
 /// ni se ofrecen destinos; sí se muestran velocidad, batería y distancia
 /// frontal reales, y Pausar/Reanudar envían `frenar` / `auto`.
+///
+/// Con [tecnico] en `false` (vista por defecto de Operador y Administrador sin
+/// Modo Desarrollador) solo muestra el mapa de la pista activa y sus
+/// estaciones: sin tarjeta de misión, destinos manuales ni pausa.
 class TarjetaMapaPista extends StatelessWidget {
-  const TarjetaMapaPista({super.key});
+  const TarjetaMapaPista({super.key, this.tecnico = true});
+
+  /// Muestra la misión, los destinos y la pausa (herramientas técnicas).
+  final bool tecnico;
 
   @override
   Widget build(BuildContext context) {
     final MqttService servicio = context.watch<MqttService>();
     final SimulacionPista? sim = servicio.pista;
+    final PistaLocal? activa = context.watch<CatalogoPistas?>()?.activa;
+    final double largo = sim?.longitudM ?? activa?.longitudM ?? largoCanonicoM;
+    final TrazadoPista trazado = TrazadoPista.paraPista(activa?.id, largo);
     final Estado? estado = servicio.ultimoEstado;
     final Ultrasonido? us = servicio.ultimoUltrasonido;
     final bool sinSenal = estadoSinSenal(estado);
@@ -524,7 +556,11 @@ class TarjetaMapaPista extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _Cabecera(demo: demo, enlace: enlace),
+          _Cabecera(
+            demo: demo,
+            enlace: enlace,
+            pista: activa?.nombre ?? 'Pista canónica',
+          ),
           const SizedBox(height: 12),
           _Mapa(
             sim: sim,
@@ -532,16 +568,28 @@ class TarjetaMapaPista extends StatelessWidget {
             zona: zona,
             hayDatos: e != null,
             puntosRuta: extras,
+            trazado: trazado,
           ),
-          const SizedBox(height: 12),
-          _TarjetaMision(sim: sim, estado: e, zona: zona),
-          const SizedBox(height: 14),
-          _SelectorDestino(servicio: servicio, sim: sim),
-          const SizedBox(height: 12),
-          _BotonPausa(servicio: servicio, sim: sim, estado: e),
-          if (sim?.ultimoEvento != null) ...<Widget>[
-            const SizedBox(height: 10),
-            _UltimoEvento(evento: sim!.ultimoEvento!),
+          const SizedBox(height: 8),
+          Text(
+            textoEstaciones(trazado.largoM),
+            key: const Key('mapa-estaciones'),
+            textAlign: TextAlign.center,
+            style: CockpitText.telemetrySm.copyWith(
+              color: CockpitColors.onSurfaceVariant,
+            ),
+          ),
+          if (tecnico) ...<Widget>[
+            const SizedBox(height: 12),
+            _TarjetaMision(sim: sim, estado: e, zona: zona),
+            const SizedBox(height: 14),
+            _SelectorDestino(servicio: servicio, sim: sim),
+            const SizedBox(height: 12),
+            _BotonPausa(servicio: servicio, sim: sim, estado: e),
+            if (sim?.ultimoEvento != null) ...<Widget>[
+              const SizedBox(height: 10),
+              _UltimoEvento(evento: sim!.ultimoEvento!),
+            ],
           ],
         ],
       ),
@@ -561,10 +609,31 @@ class TarjetaMapaPista extends StatelessWidget {
   }
 }
 
+/// Metros con coma decimal: `9,0`, `8,05`, `3,0`.
+String metrosPista(double m) {
+  final String t = (m * 100).round() % 10 == 0
+      ? m.toStringAsFixed(1)
+      : m.toStringAsFixed(2);
+  return t.replaceAll('.', ',');
+}
+
+/// Estaciones de una pista de [largoM] metros (PC1–PC3 de
+/// `specs/pista_canonica.json`, escalados si la pista no mide 9,0 m).
+String textoEstaciones(double largoM) {
+  final List<double> pc = puntosControlPara(largoM);
+  return 'Cuarto 0,0 · PC1 ${metrosPista(pc[0])} · PC2 ${metrosPista(pc[1])} · '
+      'PC3 / Lab. 1 ${metrosPista(pc[2])} · cierre ${metrosPista(largoM)} m';
+}
+
 class _Cabecera extends StatelessWidget {
-  const _Cabecera({required this.demo, required this.enlace});
+  const _Cabecera({
+    required this.demo,
+    required this.enlace,
+    required this.pista,
+  });
 
   final bool demo;
+  final String pista;
   final ({String texto, Color color}) enlace;
 
   @override
@@ -596,9 +665,9 @@ class _Cabecera extends StatelessWidget {
                 ),
               ),
               Text(
-                demo
-                    ? 'Circuito simulado · AGV-01'
-                    : 'Circuito cerrado · AGV-01',
+                demo ? '$pista · simulado · AGV-01' : '$pista · AGV-01',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: CockpitText.telemetrySm.copyWith(
                   color: CockpitColors.onSurfaceVariant,
                 ),
@@ -620,9 +689,11 @@ class _Mapa extends StatelessWidget {
     required this.zona,
     required this.hayDatos,
     required this.puntosRuta,
+    required this.trazado,
   });
 
   final List<double> puntosRuta;
+  final TrazadoPista trazado;
   final SimulacionPista? sim;
   final Ultrasonido? us;
   final ZonaSonar zona;
@@ -651,8 +722,16 @@ class _Mapa extends StatelessWidget {
                 'frente a ${s.frenteCm.toStringAsFixed(0)} centímetros',
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints c) {
-          final double alto = math.min(c.maxWidth * 0.86, 330);
-          return Container(
+          // Alto según la forma de la pista: la canónica es larga y estrecha.
+          final Rect caja = trazado.caja;
+          final double alto = math.min(
+            math.max(
+              c.maxWidth * 0.78 * caja.height / caja.width + 190,
+              270,
+            ),
+            math.min(c.maxWidth * 0.86, 330),
+          );
+          final Widget lienzo = Container(
             height: alto,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
@@ -675,6 +754,7 @@ class _Mapa extends StatelessWidget {
                       frenteCm: s != null ? s.frenteCm : us?.frenteValido,
                       zona: zona,
                       puntosRuta: puntosRuta,
+                      trazado: trazado,
                     ),
                   ),
                 ),
@@ -684,7 +764,7 @@ class _Mapa extends StatelessWidget {
                   child: _Chip(
                     texto: s == null
                         ? 'SIN POSICIÓN'
-                        : '${SimulacionPista.longitudM.toStringAsFixed(0)} m · SIMULADO',
+                        : '${metrosPista(s.longitudM)} m · SIMULADO',
                     color: CockpitColors.primary,
                     icono: s == null
                         ? Icons.location_off_outlined
@@ -696,23 +776,28 @@ class _Mapa extends StatelessWidget {
                   top: 10,
                   child: _Chip(texto: textoUs, color: cz, icono: Icons.sensors),
                 ),
-                if (s == null)
-                  Positioned(
-                    left: 24,
-                    right: 24,
-                    bottom: 12,
-                    child: Text(
-                      'El robot solo mide la línea (4× IR) y la distancia (2× '
-                      'ultrasonido): no hay localización absoluta. El mapa se '
-                      'anima en el Modo Demo.',
-                      textAlign: TextAlign.center,
-                      style: CockpitText.bodySm.copyWith(
-                        color: CockpitColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
               ],
             ),
+          );
+          if (s != null) return lienzo;
+          // Sin posición: la explicación va debajo del lienzo, sin tapar la
+          // pista ni las etiquetas.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              lienzo,
+              const SizedBox(height: 8),
+              Text(
+                'El robot solo mide la línea (4× IR) y la distancia (2× '
+                'ultrasonido): no hay localización absoluta. El mapa se '
+                'anima en el Modo Demo.',
+                key: const Key('mapa-sin-posicion'),
+                textAlign: TextAlign.center,
+                style: CockpitText.bodySm.copyWith(
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+            ],
           );
         },
       ),

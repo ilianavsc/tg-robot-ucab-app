@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/estado.dart';
 import '../../core/mqtt/mqtt_service.dart';
 import '../../core/theme/cockpit_theme.dart';
+import '../auth/sesion_local.dart';
 import '../perfil/pantalla_perfil.dart';
 import 'alertas_p11.dart';
 import 'cockpit_datos.dart';
@@ -29,6 +30,19 @@ class TelemetriaScreen extends StatefulWidget {
 
   /// Ancho máximo del contenido en pantallas grandes.
   static const double anchoMaximo = 960;
+
+  /// `true` si se muestran las herramientas técnicas (controles del robot,
+  /// conexión, radar, alertas y detalle): solo con una sesión de
+  /// Administrador en **Modo Desarrollador**. Por defecto la app muestra la
+  /// vista limpia (mapa + realizar envío). Sin `SesionLocal` en el árbol
+  /// (pruebas de componentes aisladas) se muestra la vista completa.
+  static bool vistaTecnica(BuildContext context) {
+    try {
+      return Provider.of<SesionLocal>(context).modoDesarrollador;
+    } on ProviderNotFoundException {
+      return true;
+    }
+  }
 
   @override
   State<TelemetriaScreen> createState() => _TelemetriaScreenState();
@@ -142,15 +156,19 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
   Widget build(BuildContext context) {
     final MqttService servicio = context.watch<MqttService>();
     final int pendientes = servicio.centroAlertas.pendientes;
+    final bool tecnico = TelemetriaScreen.vistaTecnica(context);
+    // Al apagar el Modo Desarrollador se vuelve a la vista principal.
+    if (!tecnico) _indice = 0;
 
     return ChangeNotifierProvider<SolicitudActiva>.value(
       value: _solicitud,
       child: Scaffold(
       appBar: CockpitAppBar(
         servicio: servicio,
-        seccion: _secciones[_indice].nombre,
-        alAjustes: _abrirConexion,
+        seccion: tecnico ? _secciones[_indice].nombre : 'MAPA Y ENVÍOS',
+        alAjustes: tecnico ? _abrirConexion : null,
         alPerfil: _abrirPerfil,
+        tecnico: tecnico,
       ),
       body: Center(
         child: ConstrainedBox(
@@ -160,64 +178,72 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
           child: Column(
             children: <Widget>[
               if (servicio.simulando) const _FranjaDemo(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: BannerAlertaActiva(),
-              ),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: MediaQuery.of(context).disableAnimations
-                      ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOutCubic,
-                  transitionBuilder: (Widget hijo, Animation<double> anim) =>
-                      FadeTransition(opacity: anim, child: hijo),
-                  child: _cuerpo(),
+              if (!tecnico)
+                const Expanded(child: PantallaDashboard(tecnico: false))
+              else ...<Widget>[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: BannerAlertaActiva(),
                 ),
-              ),
-              // En Dashboard y Controles el Freno Remoto flotante tapaba botones
-              // críticos (misión, destinos, matriz táctil) al desplazar: se
-              // reserva su franja para que la lista termine encima.
-              if (_seccionesConFranjaFreno.contains(_indice))
-                const SizedBox(height: alturaFranjaFreno),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: MediaQuery.of(context).disableAnimations
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    transitionBuilder: (Widget hijo, Animation<double> anim) =>
+                        FadeTransition(opacity: anim, child: hijo),
+                    child: _cuerpo(),
+                  ),
+                ),
+                // En Dashboard y Controles el Freno Remoto flotante tapaba botones
+                // críticos (misión, destinos, matriz táctil) al desplazar: se
+                // reserva su franja para que la lista termine encima.
+                if (_seccionesConFranjaFreno.contains(_indice))
+                  const SizedBox(height: alturaFranjaFreno),
+              ],
             ],
           ),
         ),
       ),
-      floatingActionButton: FrenoRemotoButton(
-        alPulsar: () => enviarOrden(context, servicio, 'frenar'),
-      ),
+      floatingActionButton: tecnico
+          ? FrenoRemotoButton(
+              alPulsar: () => enviarOrden(context, servicio, 'frenar'),
+            )
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: CockpitColors.surfaceLowest,
-          border: Border(top: BorderSide(color: CockpitColors.outlineVariant)),
-        ),
-        child: Center(
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: TelemetriaScreen.anchoMaximo,
+      bottomNavigationBar: !tecnico
+          ? null
+          : Container(
+            decoration: const BoxDecoration(
+              color: CockpitColors.surfaceLowest,
+              border: Border(top: BorderSide(color: CockpitColors.outlineVariant)),
             ),
-            child: NavigationBar(
-              selectedIndex: _indice,
-              onDestinationSelected: (int i) => setState(() => _indice = i),
-              destinations: <Widget>[
-                for (int i = 0; i < _secciones.length; i++)
-                  NavigationDestination(
-                    icon: _icono(_secciones[i].icono, i == 3 ? pendientes : 0),
-                    selectedIcon: _icono(
-                      _secciones[i].iconoActivo,
-                      i == 3 ? pendientes : 0,
-                    ),
-                    label: _secciones[i].nombre,
-                    tooltip: '',
-                  ),
-              ],
+            child: Center(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: TelemetriaScreen.anchoMaximo,
+                ),
+                child: NavigationBar(
+                  selectedIndex: _indice,
+                  onDestinationSelected: (int i) => setState(() => _indice = i),
+                  destinations: <Widget>[
+                    for (int i = 0; i < _secciones.length; i++)
+                      NavigationDestination(
+                        icon: _icono(_secciones[i].icono, i == 3 ? pendientes : 0),
+                        selectedIcon: _icono(
+                          _secciones[i].iconoActivo,
+                          i == 3 ? pendientes : 0,
+                        ),
+                        label: _secciones[i].nombre,
+                        tooltip: '',
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
       ),
     );
   }
@@ -243,11 +269,17 @@ class CockpitAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.seccion,
     required this.alAjustes,
     this.alPerfil,
+    this.tecnico = true,
   });
 
   final MqttService servicio;
   final String seccion;
-  final VoidCallback alAjustes;
+
+  /// Abre la conexión MQTT; si es `null` el botón no se muestra.
+  final VoidCallback? alAjustes;
+
+  /// Muestra la batería (telemetría): solo en la vista técnica.
+  final bool tecnico;
 
   /// Abre el Perfil; si es `null` el botón no se muestra.
   final VoidCallback? alPerfil;
@@ -345,14 +377,19 @@ class CockpitAppBar extends StatelessWidget implements PreferredSizeWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    _PildoraBateria(estado: sinSenal ? null : e),
-                    const SizedBox(width: 6),
-                    _BotonBarra(
-                      etiqueta: 'Conexión y broker MQTT',
-                      icono: Icons.tune,
-                      alPulsar: alAjustes,
-                    ),
+                    if (tecnico) ...<Widget>[
+                      const SizedBox(width: 8),
+                      _PildoraBateria(estado: sinSenal ? null : e),
+                    ],
+                    if (alAjustes != null) ...<Widget>[
+                      const SizedBox(width: 6),
+                      _BotonBarra(
+                        etiqueta: 'Conexión y broker MQTT',
+                        icono: Icons.tune,
+                        alPulsar: alAjustes!,
+                        clave: const Key('boton-conexion'),
+                      ),
+                    ],
                     if (alPerfil != null) ...<Widget>[
                       const SizedBox(width: 6),
                       _BotonBarra(

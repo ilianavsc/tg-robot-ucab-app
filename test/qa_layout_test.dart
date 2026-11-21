@@ -34,6 +34,7 @@ Future<void> _cargarFuentes() async {
 Future<(MqttService, SesionLocal)> _montar(
   WidgetTester t, {
   bool conSesion = false,
+  bool tecnico = false,
   Widget? hijo,
   double ancho = 390,
   double alto = 844,
@@ -43,7 +44,11 @@ Future<(MqttService, SesionLocal)> _montar(
   addTearDown(t.view.reset);
   final MqttService servicio = MqttService();
   final SesionLocal sesion = SesionLocal();
-  if (conSesion) {
+  if (tecnico) {
+    // Herramientas técnicas: Administrador en Modo Desarrollador.
+    sesion.iniciar(RolUsuario.administrador, usuario: 'admin');
+    sesion.cambiarModoDesarrollador(true);
+  } else if (conSesion) {
     sesion.iniciar(RolUsuario.operador, usuario: 'usuario');
   }
   await t.pumpWidget(
@@ -91,7 +96,7 @@ void main() {
     (WidgetTester t) async {
       final (MqttService s, SesionLocal ses) = await _montar(
         t,
-        conSesion: true,
+        tecnico: true,
       );
       await _irA(t, 'CONTROLES');
       final Rect estop = t.getRect(find.byType(FrenoRemotoButton));
@@ -130,7 +135,7 @@ void main() {
   testWidgets('Dashboard reserva la franja del Freno Remoto; Radar no', (
     WidgetTester t,
   ) async {
-    final (MqttService s, SesionLocal ses) = await _montar(t, conSesion: true);
+    final (MqttService s, SesionLocal ses) = await _montar(t, tecnico: true);
     final Rect estop = t.getRect(find.byType(FrenoRemotoButton));
     final double navTop = t.getRect(find.byType(NavigationBar)).top;
     // Dashboard (misión, destinos y pausa): la lista acaba sobre el Freno Remoto.
@@ -149,7 +154,7 @@ void main() {
     (WidgetTester t) async {
       final (MqttService s, SesionLocal ses) = await _montar(
         t,
-        conSesion: true,
+        tecnico: true,
       );
       await _irA(t, 'RADAR');
       final Finder titulo = find.text('EVITACIÓN DE COLISIONES');

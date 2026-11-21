@@ -235,7 +235,9 @@ void main() {
       expect(e.sesion.usuario, 'usuario');
       expect(e.sesion.demo, isFalse);
       expect(e.servicio.simulando, isFalse);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      // Vista limpia por defecto: mapa + realizar envío, sin pestañas técnicas
+      expect(find.byKey(const Key('vista-limpia')), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
       await _cerrar(t, e);
     });
 
@@ -509,8 +511,8 @@ void main() {
     ) async {
       final _Entorno e = await _montar(t);
       await _entrarCon(t, 'usuario', 'usuario');
-      // Las 4 pestañas siguen intactas
-      expect(find.byType(NavigationDestination), findsNWidgets(4));
+      // Vista limpia: sin las pestañas técnicas
+      expect(find.byType(NavigationDestination), findsNothing);
       await _abrirPerfil(t);
       expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
       expect(find.text('@usuario'), findsOneWidget);

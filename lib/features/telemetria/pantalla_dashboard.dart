@@ -22,8 +22,15 @@ import 'solicitud_activa.dart';
 /// Todo sale de `MqttService`. Lo que el robot no mide (corriente,
 /// temperatura, RPM, celdas) no se inventa: o se calcula y se marca como
 /// estimado (RPM, celdas ≈ V/3) o no se muestra.
+///
+/// Con [tecnico] en `false` es la **vista limpia** por defecto (Operador, o
+/// Administrador sin Modo Desarrollador): solo el mapa de la pista activa y la
+/// opción de realizar un envío.
 class PantallaDashboard extends StatelessWidget {
-  const PantallaDashboard({super.key});
+  const PantallaDashboard({super.key, this.tecnico = true});
+
+  /// Muestra las tarjetas técnicas (estado, enlace, obstáculos, detalle).
+  final bool tecnico;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +39,18 @@ class PantallaDashboard extends StatelessWidget {
     final Estado? e = servicio.ultimoEstado;
     final Ultrasonido? u = servicio.ultimoUltrasonido;
     final bool sin = estadoSinSenal(e);
+
+    if (!tecnico) {
+      return ListView(
+        key: const Key('vista-limpia'),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: <Widget>[
+          const TarjetaMapaPista(tecnico: false),
+          const SizedBox(height: 12),
+          _TarjetaPedido(servicio: servicio, solicitud: solicitud),
+        ],
+      );
+    }
 
     return ListView(
       key: const PageStorageKey<String>('dashboard'),

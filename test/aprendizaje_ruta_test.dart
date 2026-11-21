@@ -5,8 +5,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:robot_ucab_app/core/demo/simulacion_pista.dart';
 import 'package:robot_ucab_app/core/mqtt/mqtt_service.dart';
+import 'package:robot_ucab_app/core/pistas/trazado_pista.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 import 'package:robot_ucab_app/features/auth/registro_usuarios.dart';
 import 'package:robot_ucab_app/features/auth/sesion_local.dart';
@@ -397,9 +397,9 @@ void main() {
         final _Entorno e = await _montar(t);
         const RolUsuario admin = RolUsuario.administrador;
         e.ruta.iniciarPasada(admin);
-        e.ruta.avanzar(7.5); // 3 m
+        e.ruta.avanzar(5); // 2 m (PC1, a 3,0 m, ya es estación)
         e.ruta.marcarPunto(admin);
-        e.ruta.avanzar(5); // 5 m
+        e.ruta.avanzar(7.5); // 5 m
         e.ruta.finalizarYGuardar(admin);
         await _entrarCon(t, 'usuario', 'usuario');
         final CustomPaint lienzo = t.widget<CustomPaint>(
@@ -409,7 +409,7 @@ void main() {
         expect(p.puntosRuta.length, 1);
         expect(
           p.puntosRuta.first,
-          closeTo(3.0 / SimulacionPista.longitudM, 1e-6),
+          closeTo(2.0 / largoCanonicoM, 1e-6),
         );
         // Y no ve ninguna de las herramientas de aprendizaje
         expect(find.textContaining('Aprendizaje'), findsNothing);

@@ -13,6 +13,7 @@ import '../demo/simulacion_pista.dart';
 import '../models/estado.dart';
 import '../models/orden_ack.dart';
 import '../models/ultrasonido.dart';
+import '../pistas/trazado_pista.dart';
 import 'mqtt_client_platform_stub.dart'
     if (dart.library.io) 'mqtt_client_platform_io.dart'
     if (dart.library.js_interop) 'mqtt_client_platform_web.dart';
@@ -358,14 +359,15 @@ class MqttService extends ChangeNotifier {
   /// cada 2 s. Sirve para mostrar la UI sin internet (demostración al jurado).
   ///
   /// Es idempotente: si ya estaba activo, lo reinicia desde el primer perfil.
-  void iniciarSimulacion() {
+  /// [longitudM] es el largo de la pista activa (canónica: 9,0 m).
+  void iniciarSimulacion({double longitudM = largoCanonicoM}) {
     if (_descartado) return;
     detenerSimulacion();  // limpia temporizador previo
     desconectar();        // apaga MQTT y desactiva los reintentos
     analitica.reiniciar();       // sesión nueva: las métricas empiezan en 0
     centroAlertas.reiniciar();
     _simulando = true;
-    _pista = SimulacionPista();
+    _pista = SimulacionPista(longitudM: longitudM);
     _ticksDemo = 0;
     _publicadosDemo = 0;
     _ordenesDemo = 0;

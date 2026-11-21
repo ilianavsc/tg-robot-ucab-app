@@ -1,5 +1,10 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/pistas/trazado_pista.dart';
+
+export '../../core/pistas/trazado_pista.dart'
+    show largoCanonicoM, largoPistaAM, puntosControlPara;
+
 /// Estado de una pista en el catálogo.
 ///
 /// * [configurada]: ya pasó por el escaneo completo del Gemelo Digital
@@ -109,14 +114,6 @@ class PistaLocal {
     metricas: metricas ?? this.metricas,
   );
 }
-
-/// PC1–PC3 que dividen una pista de largo [largoM] en 3 segmentos iguales
-/// (PC3 coincide con el cierre de la vuelta).
-List<double> puntosControlPara(double largoM) => <double>[
-  double.parse((largoM / 3).toStringAsFixed(2)),
-  double.parse((2 * largoM / 3).toStringAsFixed(2)),
-  double.parse(largoM.toStringAsFixed(2)),
-];
 
 /// Catálogo local en memoria de pistas seleccionables desde el Login.
 ///

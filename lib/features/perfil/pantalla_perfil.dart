@@ -126,8 +126,59 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
                 icon: const Icon(Icons.logout, size: 20),
                 label: const Text('Cerrar Sesión'),
               ),
+              // Solo Administrador: interruptor compacto en la esquina
+              // inferior, justo debajo de "Cerrar Sesión".
+              if (admin) InterruptorModoDesarrollador(sesion: sesion),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Interruptor **Modo Desarrollador** del Administrador. Al encenderlo la app
+/// muestra los controles del robot, la conexión y las herramientas técnicas;
+/// al apagarlo vuelve a la vista limpia (mapa + realizar envío).
+class InterruptorModoDesarrollador extends StatelessWidget {
+  const InterruptorModoDesarrollador({super.key, required this.sesion});
+
+  final SesionLocal sesion;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          key: const Key('perfil-modo-desarrollador-fila'),
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.developer_mode,
+              size: 16,
+              color: sesion.modoDesarrollador
+                  ? CockpitColors.primary
+                  : CockpitColors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Modo Desarrollador',
+              style: CockpitText.bodySm.copyWith(
+                color: CockpitColors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                key: const Key('perfil-modo-desarrollador'),
+                value: sesion.modoDesarrollador,
+                onChanged: sesion.cambiarModoDesarrollador,
+              ),
+            ),
+          ],
         ),
       ),
     );

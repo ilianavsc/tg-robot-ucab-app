@@ -124,7 +124,12 @@ class _PantallaLoginState extends State<PantallaLogin> {
   /// Modo Demo directo: entra como el Operador de demostración y arranca la
   /// telemetría simulada de `MqttService` (sin red ni robot).
   void _entrarDemo() {
-    context.read<MqttService>().iniciarSimulacion();
+    // Simula la pista activa (8,05 m la Pista A); sin pista, la canónica.
+    context.read<MqttService>().iniciarSimulacion(
+      longitudM:
+          _catalogo(context, listen: false).activa?.longitudM ??
+          largoCanonicoM,
+    );
     context.read<SesionLocal>().iniciar(
       RolUsuario.operador,
       usuario: 'usuario',

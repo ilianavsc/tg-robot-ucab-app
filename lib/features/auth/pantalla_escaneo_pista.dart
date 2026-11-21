@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../core/theme/cockpit_theme.dart';
+import '../../core/pistas/trazado_pista.dart';
 import 'catalogo_pistas.dart';
 import 'escaneo_pista.dart';
 
@@ -267,33 +268,15 @@ class _PintorEscaneo extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Rect r = Rect.fromLTRB(28, 34, size.width - 28, size.height - 30);
-    final double radio = math.min(r.width, r.height) * 0.32;
-    final Path camino = Path()
-      ..moveTo(r.left, r.bottom - radio)
-      ..lineTo(r.left, r.top + radio)
-      ..arcToPoint(
-        Offset(r.left + radio, r.top),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.right - radio, r.top)
-      ..arcToPoint(
-        Offset(r.right, r.top + radio),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.right, r.bottom - radio)
-      ..arcToPoint(
-        Offset(r.right - radio, r.bottom),
-        radius: Radius.circular(radio),
-      )
-      ..lineTo(r.left + radio, r.bottom)
-      ..arcToPoint(
-        Offset(r.left, r.bottom - radio),
-        radius: Radius.circular(radio),
-      )
-      ..close();
-    final PathMetric m = camino.computeMetrics().first;
+    final Rect r = Rect.fromLTRB(28, 40, size.width - 28, size.height - 34);
     final double largo = e.largoM;
+    // Trazado real: la forma canónica de SIM1/SIM2 (escalada al largo de la
+    // pista nueva) o el circuito histórico de la Pista A.
+    final Path camino = caminoEnLienzo(
+      TrazadoPista.paraPista(e.pistaId, largo),
+      r,
+    );
+    final PathMetric m = camino.computeMetrics().first;
     double f(double metros) => (metros / largo).clamp(0.0, 1.0) * m.length;
 
     // pista base
@@ -314,7 +297,7 @@ class _PintorEscaneo extends CustomPainter {
       final List<(double, double)> tramos = <(double, double)>[
         (0, pc[0]),
         (pc[0], pc[1]),
-        (pc[1], pc[2]),
+        (pc[1], largo), // PC2 → PC3 → cierre
       ];
       for (int i = 0; i < 3; i++) {
         final bool activo = _etapa.segmento == i;
@@ -345,17 +328,17 @@ class _PintorEscaneo extends CustomPainter {
       );
     }
 
-    // inicio y puntos de control
+    // inicio (y cierre de la vuelta) y PC1–PC3 en su posición
     _marca(
       canvas,
       m.getTangentForOffset(0)!.position,
-      pc.length == 3 ? 'INICIO · PC3' : 'INICIO',
+      'INICIO',
       CockpitColors.onSurfaceVariant,
-      abajo: true,
+      abajo: m.getTangentForOffset(0)!.position.dy > r.center.dy,
     );
-    // PC1 y PC2 a lo largo del circuito; PC3 cierra la vuelta en el inicio.
-    for (int i = 0; i < pc.length && i < 2; i++) {
-      _rombo(canvas, m.getTangentForOffset(f(pc[i]))!.position, 'PC${i + 1}');
+    for (int i = 0; i < pc.length; i++) {
+      final Offset q = m.getTangentForOffset(f(pc[i]))!.position;
+      _rombo(canvas, q, 'PC${i + 1}', abajo: q.dy > r.center.dy);
     }
 
     // robot
@@ -370,7 +353,7 @@ class _PintorEscaneo extends CustomPainter {
     canvas.drawCircle(t.position, 7, Paint()..color = CockpitColors.primary);
     canvas.drawLine(
       t.position,
-      t.position + Offset(math.cos(-t.angle), math.sin(-t.angle)) * 12,
+      t.position + t.vector * 12,
       Paint()
         ..color = CockpitColors.primaryText
         ..strokeWidth = 2,
