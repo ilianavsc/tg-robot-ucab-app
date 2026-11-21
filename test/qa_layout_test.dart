@@ -49,7 +49,7 @@ Future<(MqttService, SesionLocal)> _montar(
     sesion.iniciar(RolUsuario.administrador, usuario: 'admin');
     sesion.cambiarModoDesarrollador(true);
   } else if (conSesion) {
-    sesion.iniciar(RolUsuario.operador, usuario: 'usuario');
+    sesion.iniciar(RolUsuario.operador, usuario: 'user');
   }
   await t.pumpWidget(
     MultiProvider(

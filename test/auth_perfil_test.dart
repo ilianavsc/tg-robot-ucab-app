@@ -211,11 +211,11 @@ void main() {
         // Placeholder dinámico según rol
         TextField campoUsuario() =>
             t.widget<TextField>(find.byKey(const Key('login-usuario')));
-        expect(campoUsuario().decoration!.hintText, 'usuario');
+        expect(campoUsuario().decoration!.hintText, 'user');
         await _tocar(t, find.byKey(const Key('rol-administrador')));
-        expect(campoUsuario().decoration!.hintText, 'administrador');
+        expect(campoUsuario().decoration!.hintText, 'admin');
         await _tocar(t, find.byKey(const Key('rol-operador')));
-        expect(campoUsuario().decoration!.hintText, 'usuario');
+        expect(campoUsuario().decoration!.hintText, 'user');
         // Sin registro público
         expect(find.textContaining('Registrarse'), findsNothing);
         expect(find.textContaining('Crear cuenta'), findsNothing);
@@ -226,13 +226,13 @@ void main() {
       },
     );
 
-    testWidgets('usuario / usuario entra como Operador (cuenta 01)', (
+    testWidgets('user / user entra como Operador (cuenta 01)', (
       WidgetTester t,
     ) async {
       final _Entorno e = await _montar(t);
-      await _entrarCon(t, 'usuario', 'usuario');
+      await _entrarCon(t, 'user', 'user');
       expect(e.sesion.rol, RolUsuario.operador);
-      expect(e.sesion.usuario, 'usuario');
+      expect(e.sesion.usuario, 'user');
       expect(e.sesion.demo, isFalse);
       expect(e.servicio.simulando, isFalse);
       // Vista limpia por defecto: mapa + realizar envío, sin pestañas técnicas
@@ -242,17 +242,17 @@ void main() {
     });
 
     testWidgets(
-      'administrador / administrador entra como Administrador (cuenta 00, sin distinguir mayúsculas)',
+      'admin / admin entra como Administrador (cuenta 00, sin distinguir mayúsculas)',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
         await _entrarCon(
           t,
-          '  ADMINISTRADOR ',
-          'administrador',
+          '  ADMIN ',
+          'admin',
           admin: true,
         );
         expect(e.sesion.rol, RolUsuario.administrador);
-        expect(e.sesion.usuario, 'administrador');
+        expect(e.sesion.usuario, 'admin');
         await _cerrar(t, e);
       },
     );
@@ -262,14 +262,14 @@ void main() {
     ) async {
       final _Entorno e = await _montar(t);
       // Cuenta administrador con selector en Operador -> rechazada
-      await _entrarCon(t, 'administrador', 'administrador', admin: false);
+      await _entrarCon(t, 'admin', 'admin', admin: false);
       expect(e.sesion.activa, isFalse);
       expect(
         find.text('Esta cuenta corresponde al perfil Administrador.'),
         findsOneWidget,
       );
       // Cuenta usuario con selector en Administrador -> rechazada
-      await _entrarCon(t, 'usuario', 'usuario', admin: true);
+      await _entrarCon(t, 'user', 'user', admin: true);
       expect(e.sesion.activa, isFalse);
       expect(
         find.text('Esta cuenta corresponde al perfil Operador.'),
@@ -283,9 +283,9 @@ void main() {
     ) async {
       final _Entorno e = await _montar(t);
       for (final (String u, String c, bool adm) in <(String, String, bool)>[
-        ('administrador', 'Administrador', true), // distingue mayúsculas
-        ('administrador', '', true),
-        ('administrador', 'usuario', true),
+        ('admin', 'Admin', true), // distingue mayúsculas
+        ('admin', '', true),
+        ('admin', 'user', true),
         ('', '', false),
         ('nadie', 'nadie', false),
       ]) {
@@ -415,7 +415,7 @@ void main() {
         await _tocar(t, find.byKey(const Key('pista-item-A')));
         expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
         expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
-        await _entrarCon(t, 'usuario', 'usuario');
+        await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
         expect(e.sesion.rol, RolUsuario.operador);
         expect(t.takeException(), isNull);
@@ -529,7 +529,7 @@ void main() {
               .onPressed,
           isNotNull,
         );
-        await _entrarCon(t, 'usuario', 'usuario');
+        await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
@@ -593,12 +593,12 @@ void main() {
       WidgetTester t,
     ) async {
       final _Entorno e = await _montar(t);
-      await _entrarCon(t, 'usuario', 'usuario');
+      await _entrarCon(t, 'user', 'user');
       // Vista limpia: sin las pestañas técnicas
       expect(find.byType(NavigationDestination), findsNothing);
       await _abrirPerfil(t);
       expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
-      expect(find.text('@usuario'), findsOneWidget);
+      expect(find.text('@user'), findsOneWidget);
       expect(find.text('Operador'), findsWidgets);
       expect(find.byKey(const Key('perfil-cerrar')), findsOneWidget);
       // Sin información de tipo de conexión ni telemetría técnica para Operador
@@ -620,7 +620,7 @@ void main() {
 
     testWidgets('Cerrar Sesión vuelve al Login', (WidgetTester t) async {
       final _Entorno e = await _montar(t);
-      await _entrarCon(t, 'usuario', 'usuario');
+      await _entrarCon(t, 'user', 'user');
       await _abrirPerfil(t);
       await _tocar(t, find.byKey(const Key('perfil-cerrar')));
       await t.pump(const Duration(milliseconds: 400)); // termina el pop
@@ -653,7 +653,7 @@ void main() {
       bool modoDev = true,
     }) async {
       final _Entorno e = await _montar(t, ancho: ancho);
-      await _entrarCon(t, 'administrador', 'administrador', admin: true);
+      await _entrarCon(t, 'admin', 'admin', admin: true);
       await _abrirPerfil(t);
       if (modoDev) {
         await _tocar(t, find.byKey(const Key('perfil-modo-desarrollador')));
@@ -666,7 +666,7 @@ void main() {
       (WidgetTester t) async {
         final _Entorno e = await entrarAdmin(t, modoDev: false);
         expect(find.text('PERFIL · ADMIN'), findsOneWidget);
-        expect(find.text('@administrador'), findsOneWidget);
+        expect(find.text('@admin'), findsOneWidget);
         expect(find.byKey(const Key('perfil-usuarios')), findsOneWidget);
         expect(find.byKey(const Key('perfil-cerrar')), findsOneWidget);
         expect(

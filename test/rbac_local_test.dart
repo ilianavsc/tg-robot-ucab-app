@@ -168,7 +168,7 @@ void main() {
 
   group('RegistroUsuarios (RBAC local en memoria)', () {
     test(
-      'trae las dos cuentas base 00 (administrador/administrador) y 01 (usuario/usuario)',
+      'trae las dos cuentas base 00 (admin/admin) y 01 (user/user)',
       () {
         final RegistroUsuarios r = RegistroUsuarios();
         expect(r.cuentas.map((CuentaLocal c) => c.codigo), <String>[
@@ -176,21 +176,21 @@ void main() {
           '01',
         ]);
         expect(r.cuentas.map((CuentaLocal c) => c.usuario), <String>[
-          'administrador',
-          'usuario',
+          'admin',
+          'user',
         ]);
-        expect(r.autenticar('usuario', 'usuario')!.rol, RolUsuario.operador);
+        expect(r.autenticar('user', 'user')!.rol, RolUsuario.operador);
         expect(
-          r.autenticar('administrador', 'administrador')!.rol,
+          r.autenticar('admin', 'admin')!.rol,
           RolUsuario.administrador,
         );
-        expect(r.autenticar('  ADMINISTRADOR ', 'administrador'), isNotNull);
-        expect(r.autenticar('administrador', 'Administrador'), isNull);
-        expect(r.autenticar('administrador', 'usuario'), isNull);
+        expect(r.autenticar('  ADMIN ', 'admin'), isNotNull);
+        expect(r.autenticar('admin', 'Admin'), isNull);
+        expect(r.autenticar('admin', 'user'), isNull);
         expect(
           r.autenticar(
-            'administrador',
-            'administrador',
+            'admin',
+            'admin',
             rolEsperado: RolUsuario.operador,
           ),
           isNull,
@@ -255,8 +255,8 @@ void main() {
       expect(alta('Ana', 'an', 'ana123'), ResultadoAlta.usuarioCorto);
       expect(alta('Ana', 'ana perez', 'ana123'), ResultadoAlta.usuarioInvalido);
       expect(alta('Ana', 'ana@ucab', 'ana123'), ResultadoAlta.usuarioInvalido);
-      expect(alta('Ana', 'administrador', 'ana123'), ResultadoAlta.usuarioRepetido);
-      expect(alta('Ana', 'USUARIO', 'ana123'), ResultadoAlta.usuarioRepetido);
+      expect(alta('Ana', 'admin', 'ana123'), ResultadoAlta.usuarioRepetido);
+      expect(alta('Ana', 'USER', 'ana123'), ResultadoAlta.usuarioRepetido);
       expect(alta('Ana', 'ana', '123'), ResultadoAlta.claveCorta);
       expect(alta('Ana', 'ana', 'ana123'), ResultadoAlta.creado);
       expect(alta('Otra', 'ANA', 'otra123'), ResultadoAlta.usuarioRepetido);
@@ -282,12 +282,12 @@ void main() {
       expect(
         r.eliminarOperador(
           actor: RolUsuario.administrador,
-          usuario: 'administrador',
+          usuario: 'admin',
         ),
         isFalse,
       );
       expect(
-        r.eliminarOperador(actor: RolUsuario.administrador, usuario: 'usuario'),
+        r.eliminarOperador(actor: RolUsuario.administrador, usuario: 'user'),
         isFalse,
       );
       expect(
@@ -310,15 +310,15 @@ void main() {
       'crear Operador desde Admin, cerrar sesión e ingresar con esa cuenta',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         expect(e.sesion.rol, RolUsuario.administrador);
         await _abrirGestion(t);
         expect(find.byType(PantallaGestionUsuarios), findsOneWidget);
         expect(find.textContaining('No hay registro público'), findsOneWidget);
-        // Cuenta 00 (administrador) y 01 (usuario) ya registradas por defecto
-        await _bajarUsuarios(t, find.byKey(const Key('cuenta-usuario')));
-        expect(find.text('00 · @administrador'), findsOneWidget);
-        expect(find.text('01 · @usuario'), findsOneWidget);
+        // Cuenta 00 (admin) y 01 (user) ya registradas por defecto
+        await _bajarUsuarios(t, find.byKey(const Key('cuenta-user')));
+        expect(find.text('00 · @admin'), findsOneWidget);
+        expect(find.text('01 · @user'), findsOneWidget);
 
         await _crear(t, nombre: 'Ana Pérez', usuario: 'Ana', clave: 'ana123');
         expect(
@@ -364,7 +364,7 @@ void main() {
       'el formulario rechaza datos inválidos y repetidos con un mensaje',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirGestion(t);
         String mensaje() =>
             t.widget<Text>(find.byKey(const Key('usuarios-mensaje'))).data!;
@@ -375,7 +375,7 @@ void main() {
         expect(mensaje(), ResultadoAlta.usuarioCorto.mensaje);
         await _crear(t, nombre: 'Ana', usuario: 'a b c', clave: 'ana123');
         expect(mensaje(), ResultadoAlta.usuarioInvalido.mensaje);
-        await _crear(t, nombre: 'Ana', usuario: 'administrador', clave: 'ana123');
+        await _crear(t, nombre: 'Ana', usuario: 'admin', clave: 'ana123');
         expect(mensaje(), ResultadoAlta.usuarioRepetido.mensaje);
         await _crear(t, nombre: 'Ana', usuario: 'ana', clave: 'abc');
         expect(mensaje(), ResultadoAlta.claveCorta.mensaje);
@@ -389,7 +389,7 @@ void main() {
       'eliminar un operador creado le quita el acceso; las cuentas demo no se pueden eliminar',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirGestion(t);
         await _crear(
           t,
@@ -400,11 +400,11 @@ void main() {
         await _bajarUsuarios(t, find.byKey(const Key('cuenta-luis')));
         // Las cuentas base no tienen botón de eliminar
         expect(
-          find.byKey(const Key('usuarios-eliminar-usuario')),
+          find.byKey(const Key('usuarios-eliminar-user')),
           findsNothing,
         );
         expect(
-          find.byKey(const Key('usuarios-eliminar-administrador')),
+          find.byKey(const Key('usuarios-eliminar-admin')),
           findsNothing,
         );
         expect(find.byKey(const Key('usuarios-eliminar-luis')), findsOneWidget);
@@ -434,7 +434,7 @@ void main() {
       t.view.devicePixelRatio = 2;
       addTearDown(t.view.reset);
       final SesionLocal sesion = SesionLocal()
-        ..iniciar(RolUsuario.operador, usuario: 'usuario');
+        ..iniciar(RolUsuario.operador, usuario: 'user');
       final RegistroUsuarios registro = RegistroUsuarios();
       await t.pumpWidget(
         MultiProvider(
@@ -477,7 +477,7 @@ void main() {
         WidgetTester t,
       ) async {
         final _Entorno e = await _montar(t, ancho: w, alto: h);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirGestion(t);
         await _crear(
           t,

@@ -175,7 +175,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
     );
     context.read<SesionLocal>().iniciar(
       RolUsuario.operador,
-      usuario: 'usuario',
+      usuario: 'user',
       nombre: 'Operador demo',
       demo: true,
     );
@@ -258,7 +258,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
                         },
                         decoration: _decoracion(
                           icono: Icons.person_outline,
-                          hint: esAdmin ? 'administrador' : 'usuario',
+                          hint: esAdmin ? 'admin' : 'user',
                         ),
                       ),
                       const SizedBox(height: 16),

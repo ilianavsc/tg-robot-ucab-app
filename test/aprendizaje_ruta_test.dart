@@ -260,7 +260,7 @@ void main() {
       WidgetTester t,
     ) async {
       final _Entorno e = await _montar(t);
-      await _entrarCon(t, 'usuario', 'usuario');
+      await _entrarCon(t, 'user', 'user');
       await _tocar(t, find.byKey(const Key('boton-perfil')));
       expect(find.byKey(const Key('perfil-aprendizaje')), findsNothing);
       expect(find.textContaining('Aprendizaje de Ruta'), findsNothing);
@@ -298,7 +298,7 @@ void main() {
       'el Administrador ve la tarjeta, la abre y recorre el flujo completo',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirAprendizaje(t);
         expect(find.byType(PantallaAprendizajeRuta), findsOneWidget);
         expect(find.byKey(const Key('aprendizaje-restringido')), findsNothing);
@@ -331,7 +331,7 @@ void main() {
 
     testWidgets('guardar sin puntos avisa y no guarda', (WidgetTester t) async {
       final _Entorno e = await _montar(t);
-      await _entrarCon(t, 'administrador', 'administrador', admin: true);
+      await _entrarCon(t, 'admin', 'admin', admin: true);
       await _abrirAprendizaje(t);
       await _tocar(t, find.byKey(const Key('aprendizaje-iniciar')));
       await _tocar(t, find.byKey(const Key('aprendizaje-guardar')));
@@ -349,7 +349,7 @@ void main() {
       'la vista previa de reducción progresiva de cinta cambia con el control',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirAprendizaje(t);
         await _bajarRuta(t, find.byKey(const Key('reduccion-switch')));
         expect(
@@ -404,7 +404,7 @@ void main() {
         e.ruta.marcarPunto(admin);
         e.ruta.avanzar(7.5); // 5 m
         e.ruta.finalizarYGuardar(admin);
-        await _entrarCon(t, 'usuario', 'usuario');
+        await _entrarCon(t, 'user', 'user');
         final CustomPaint lienzo = t.widget<CustomPaint>(
           find.byKey(const Key('mapa-pista-lienzo')),
         );
@@ -426,7 +426,7 @@ void main() {
     ]) {
       testWidgets('la pantalla no desborda ($n)', (WidgetTester t) async {
         final _Entorno e = await _montar(t, ancho: w, alto: h);
-        await _entrarCon(t, 'administrador', 'administrador', admin: true);
+        await _entrarCon(t, 'admin', 'admin', admin: true);
         await _abrirAprendizaje(t);
         await _tocar(t, find.byKey(const Key('aprendizaje-iniciar')));
         await t.pump(const Duration(seconds: 3));

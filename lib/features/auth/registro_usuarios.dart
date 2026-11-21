@@ -57,17 +57,17 @@ class RegistroUsuarios extends ChangeNotifier {
     _cuentas.addAll(const <CuentaLocal>[
       CuentaLocal(
         codigo: '00',
-        usuario: 'administrador',
+        usuario: 'admin',
         nombre: 'Administrador',
-        clave: 'administrador',
+        clave: 'admin',
         rol: RolUsuario.administrador,
         demo: true,
       ),
       CuentaLocal(
         codigo: '01',
-        usuario: 'usuario',
+        usuario: 'user',
         nombre: 'Operador',
-        clave: 'usuario',
+        clave: 'user',
         rol: RolUsuario.operador,
         demo: true,
       ),

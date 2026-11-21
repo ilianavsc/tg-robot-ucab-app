@@ -110,7 +110,7 @@ Future<void> _entrar(WidgetTester t, {required bool admin}) async {
     t,
     find.byKey(Key(admin ? 'rol-administrador' : 'rol-operador')),
   );
-  final String u = admin ? 'administrador' : 'usuario';
+  final String u = admin ? 'admin' : 'user';
   await t.enterText(find.byKey(const Key('login-usuario')), u);
   await t.enterText(find.byKey(const Key('login-clave')), u);
   await _tocar(t, find.byKey(const Key('login-entrar')));
@@ -163,11 +163,11 @@ void main() {
         final SesionLocal s = SesionLocal();
         expect(s.modoDesarrollador, isFalse);
         expect(s.cambiarModoDesarrollador(true), isFalse, reason: 'sin sesión');
-        s.iniciar(RolUsuario.operador, usuario: 'usuario');
+        s.iniciar(RolUsuario.operador, usuario: 'user');
         expect(s.cambiarModoDesarrollador(true), isFalse);
         expect(s.modoDesarrollador, isFalse);
         s.cerrar();
-        s.iniciar(RolUsuario.administrador, usuario: 'administrador');
+        s.iniciar(RolUsuario.administrador, usuario: 'admin');
         expect(s.modoDesarrollador, isFalse, reason: 'inicia siempre apagado');
         int avisos = 0;
         s.addListener(() => avisos++);
@@ -176,7 +176,7 @@ void main() {
         expect(avisos, 1, reason: 'es reactivo');
         s.cerrar();
         expect(s.modoDesarrollador, isFalse);
-        s.iniciar(RolUsuario.administrador, usuario: 'administrador');
+        s.iniciar(RolUsuario.administrador, usuario: 'admin');
         expect(s.modoDesarrollador, isFalse, reason: 'se reinicia al cerrar');
         s.dispose();
       },
