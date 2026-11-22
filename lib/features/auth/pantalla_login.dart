@@ -434,7 +434,7 @@ class _PantallaLoginState extends State<PantallaLogin> {
                                     ),
                                     if (p.esCircuitoCerrado)
                                       Text(
-                                        p.tipoViaje.etiqueta,
+                                        p.geometria.etiqueta,
                                         key: Key('pista-tipo-${p.id}'),
                                         style: CockpitText.telemetrySm.copyWith(
                                           fontSize: 10,
@@ -826,6 +826,7 @@ class _DialogoNuevaPista extends StatefulWidget {
 class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
   final TextEditingController _nombre = TextEditingController();
   final TextEditingController _largo = TextEditingController(text: '9.0');
+  TipoGeometriaPista _geometria = TipoGeometriaPista.circuitoCerrado;
   String? _error;
 
   @override
@@ -873,6 +874,7 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
     final PistaLocal? pista = widget.catalogo.agregarPista(
       nombre: nombre,
       longitudM: largo,
+      geometria: _geometria,
     );
     Navigator.of(context).pop(pista?.id);
   }
@@ -929,6 +931,40 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
                 ),
               ),
               const SizedBox(height: 14),
+              Text(
+                'TIPO DE PISTA',
+                style: CockpitText.labelMd.copyWith(
+                  fontSize: 11,
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SegmentedButton<TipoGeometriaPista>(
+                key: const Key('nueva-pista-tipo'),
+                showSelectedIcon: false,
+                segments: const <ButtonSegment<TipoGeometriaPista>>[
+                  ButtonSegment<TipoGeometriaPista>(
+                    value: TipoGeometriaPista.circuitoCerrado,
+                    icon: Icon(Icons.loop, size: 16),
+                    label: Text(
+                      'Circuito cerrado',
+                      key: Key('tipo-pista-circuito'),
+                    ),
+                  ),
+                  ButtonSegment<TipoGeometriaPista>(
+                    value: TipoGeometriaPista.lineal,
+                    icon: Icon(Icons.linear_scale, size: 16),
+                    label: Text('Lineal', key: Key('tipo-pista-lineal')),
+                  ),
+                ],
+                selected: <TipoGeometriaPista>{_geometria},
+                onSelectionChanged: (Set<TipoGeometriaPista> sel) {
+                  if (sel.isNotEmpty) {
+                    setState(() => _geometria = sel.first);
+                  }
+                },
+              ),
+              const SizedBox(height: 14),
               TextField(
                 key: const Key('nueva-pista-nombre'),
                 controller: _nombre,
@@ -937,7 +973,7 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
                 style: CockpitText.bodyMd.copyWith(
                   color: CockpitColors.onSurface,
                 ),
-                decoration: _deco(Icons.route_outlined, 'Ej. Laboratorio 2'),
+                decoration: _deco(Icons.route_outlined, 'Ej. Pista B'),
               ),
               const SizedBox(height: 12),
               TextField(

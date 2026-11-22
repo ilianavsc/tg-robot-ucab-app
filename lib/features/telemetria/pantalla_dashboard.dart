@@ -199,7 +199,9 @@ class _TarjetaRecorrido extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Circuito cerrado · recorrido completo',
+            pista?.esLineal == true
+                ? 'Pista lineal · recorrido completo'
+                : 'Circuito cerrado · recorrido completo',
             key: const Key('recorrido-subtitulo'),
             style: CockpitText.bodySm.copyWith(
               color: CockpitColors.onSurfaceVariant,

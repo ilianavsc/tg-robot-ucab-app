@@ -455,13 +455,43 @@ void main() {
       expect(sa.posiciones[DestinoPista.laboratorio1], 6.71);
     });
 
-    test('Escaneo de una pista de 9,0 m fija PC1–PC3 de la especificación', () {
-      final EscaneoPista s = EscaneoPista(pistaId: 'P1', largoEstimadoM: 9.0);
-      s.completarTodo();
-      expect(s.metricas!.largoM, closeTo(largo, 0.01));
-      expect(s.metricas!.puntosControlM, pcs);
-      s.dispose();
-    });
+    test(
+      'Escaneo de una pista de 9,0 m fija PC1–PC3 equitativos (L/3) y 3 lecturas por segmento',
+      () {
+        final EscaneoPista cerrada = EscaneoPista(
+          pistaId: 'P1',
+          largoEstimadoM: 9.0,
+          geometria: TipoGeometriaPista.circuitoCerrado,
+        );
+        cerrada.completarTodo();
+        expect(cerrada.distanciaVerificada, isTrue);
+        expect(cerrada.metricas!.largoM, closeTo(largo, 0.01));
+        expect(cerrada.metricas!.puntosControlM, <double>[3.0, 6.0, 9.0]);
+        expect(cerrada.metricas!.lecturasPorSegmento, <int>[3, 3, 3]);
+        expect(cerrada.totalLecturasCompletadas, 9);
+        expect(cerrada.metricas!.giroTotalGrados, 360);
+        cerrada.dispose();
+
+        final EscaneoPista lineal = EscaneoPista(
+          pistaId: 'P2',
+          largoEstimadoM: 9.0,
+          geometria: TipoGeometriaPista.lineal,
+        );
+        lineal.completarTodo();
+        expect(lineal.metricas!.puntosControlM, <double>[3.0, 6.0, 9.0]);
+        expect(lineal.metricas!.lecturasPorSegmento, <int>[3, 3, 3]);
+        expect(lineal.metricas!.giroTotalGrados, 0);
+        lineal.dispose();
+
+        final TrazadoPista trLin = TrazadoPista.paraPista(
+          'P2',
+          9.0,
+          geometria: TipoGeometriaPista.lineal,
+        );
+        expect(trLin.cerrada, isFalse);
+        expect(trLin.largoM, closeTo(9.0, 0.01));
+      },
+    );
 
     testWidgets('el mapa principal muestra las estaciones de la pista activa', (
       WidgetTester t,

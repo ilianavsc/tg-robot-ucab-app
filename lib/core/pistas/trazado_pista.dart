@@ -1,6 +1,32 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Path, Rect;
 
+/// Geometría física de una pista del laboratorio.
+///
+/// * [circuitoCerrado]: recorrido en lazo cerrado (el final conecta con el inicio).
+/// * [lineal]: recorrido abierto en línea recta de extremo a extremo.
+enum TipoGeometriaPista {
+  circuitoCerrado('circuito_cerrado', 'Circuito cerrado'),
+  lineal('lineal', 'Lineal');
+
+  const TipoGeometriaPista(this.clave, this.etiqueta);
+
+  final String clave;
+  final String etiqueta;
+}
+
+/// Puntos de control equitativos en tercios del largo total (alineado con P05):
+/// `PC1 = L/3`, `PC2 = 2·L/3`, `PC3 = L`.
+List<double> puntosControlEquitativos(double largoM) {
+  final double l = largoM > 0 ? largoM : largoCanonicoM;
+  final double tercio = l / 3;
+  return <double>[
+    double.parse(tercio.toStringAsFixed(2)),
+    double.parse((tercio * 2).toStringAsFixed(2)),
+    double.parse(l.toStringAsFixed(2)),
+  ];
+}
+
 /// Largo del recorrido canónico (m), `specs/pista_canonica.json`.
 const double largoCanonicoM = 9.0;
 
@@ -38,20 +64,32 @@ List<double> puntosControlPara(double largoM) {
 ///   `pista.js · trazoB`), sobre el que caen T1–T4 y PC1–PC3.
 /// * `escalada(L)`: la canónica escalada a otro largo (pistas nuevas).
 class TrazadoPista {
-  TrazadoPista._(this.id, this.puntosM, this.paso)
-    : largoM = puntosM.length * paso;
+  TrazadoPista._(
+    this.id,
+    this.puntosM,
+    this.paso, {
+    this.cerrada = true,
+    double? largoM,
+  }) : largoM = largoM ?? puntosM.length * paso;
 
   /// Distancia entre muestras (m), igual que SIM1 (5 mm).
   static const double pasoSim1 = 0.005;
 
   final String id;
 
-  /// Muestras del circuito (m). La última une con la primera.
+  /// Muestras del trazado (m). Si [cerrada] es `true`, la última une con la primera.
   final List<Offset> puntosM;
   final double paso;
 
-  /// Largo del circuito (m).
+  /// `true` para circuito cerrado; `false` para pista lineal abierta.
+  final bool cerrada;
+
+  /// Largo del trazado (m).
   final double largoM;
+
+  TipoGeometriaPista get geometria => cerrada
+      ? TipoGeometriaPista.circuitoCerrado
+      : TipoGeometriaPista.lineal;
 
   static TrazadoPista? _a;
   static TrazadoPista? _b;
@@ -76,11 +114,36 @@ class TrazadoPista {
     ], b.paso * k);
   }
 
-  /// Trazado de una pista del catálogo: la Pista A usa el circuito histórico;
-  /// el resto, la forma canónica (exacta a 9,0 m, escalada si mide otro largo).
-  factory TrazadoPista.paraPista(String? id, double? largoM) {
-    if (id == 'A') return TrazadoPista.historicaA();
+  /// Pista lineal abierta de [largoM] metros (inicio a la izquierda, fin a la derecha).
+  factory TrazadoPista.lineal(double largoM, {String id = 'LIN'}) {
+    final double l = largoM > 0 ? largoM : largoCanonicoM;
+    final int tramos = math.max(20, (l / pasoSim1).round());
+    final double pasoReal = l / tramos;
+    final double mitad = l / 2;
+    return TrazadoPista._(
+      id,
+      <Offset>[
+        for (int i = 0; i <= tramos; i++) Offset(-mitad + i * pasoReal, 0),
+      ],
+      pasoReal,
+      cerrada: false,
+      largoM: l,
+    );
+  }
+
+  /// Trazado de una pista del catálogo: respeta [geometria] (`lineal` vs
+  /// `circuitoCerrado`). Para circuito cerrado, la Pista A usa el circuito
+  /// histórico y el resto la forma canónica (escalada si mide otro largo).
+  factory TrazadoPista.paraPista(
+    String? id,
+    double? largoM, {
+    TipoGeometriaPista geometria = TipoGeometriaPista.circuitoCerrado,
+  }) {
     final double l = largoM ?? largoCanonicoM;
+    if (geometria == TipoGeometriaPista.lineal) {
+      return TrazadoPista.lineal(l, id: id ?? 'LIN');
+    }
+    if (id == 'A') return TrazadoPista.historicaA();
     if ((l - largoCanonicoM).abs() < 1e-6) return TrazadoPista.canonica();
     return TrazadoPista.escalada(l, id: id ?? 'B*');
   }
@@ -88,6 +151,7 @@ class TrazadoPista {
   int _indice(double s) {
     final int n = puntosM.length;
     final int k = (s / paso).round();
+    if (!cerrada) return k.clamp(0, n - 1);
     return ((k % n) + n) % n;
   }
 
@@ -314,6 +378,11 @@ Path caminoEnLienzo(TrazadoPista t, Rect area, {int cada = 4}) {
   for (int k = cada; k < t.puntosM.length; k += cada) {
     final Offset q = a(t.puntosM[k]);
     p.lineTo(q.dx, q.dy);
+  }
+  if (!t.cerrada) {
+    final Offset ultimo = a(t.puntosM.last);
+    p.lineTo(ultimo.dx, ultimo.dy);
+    return p;
   }
   return p..close();
 }

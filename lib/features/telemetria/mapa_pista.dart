@@ -58,7 +58,9 @@ class PistaGeometria {
   double get longitud => _metrica.length;
 
   Tangent _en(double fraccion) {
-    final double f = fraccion - fraccion.floorToDouble();
+    final double f = trazado.cerrada
+        ? fraccion - fraccion.floorToDouble()
+        : fraccion.clamp(0.0, 1.0);
     return _metrica.getTangentForOffset(f * _metrica.length)!;
   }
 
@@ -190,12 +192,21 @@ class PintorPista extends CustomPainter {
     this.trazado,
     this.vueltaCompleta = false,
     this.vueltaCompletada = false,
+    this.puntosControlM = const <double>[],
+    this.mostrarCheckpointsP05 = false,
   });
 
   /// Pista que se dibuja (`null` = canónica de 9,0 m).
   final TrazadoPista? trazado;
   final bool vueltaCompleta;
   final bool vueltaCompletada;
+
+  /// Puntos de control equitativos (`L/3`, `2·L/3`, `L`) fijados en el escaneo.
+  final List<double> puntosControlM;
+
+  /// `true` en pistas nuevas escaneadas o lineales: dibuja `INICIO` y `PC1–PC3`
+  /// con el estilo limpio de `P05` en lugar de las etiquetas de entrega.
+  final bool mostrarCheckpointsP05;
 
   final DestinoPista destino;
   final double? fraccionRobot;
@@ -266,6 +277,25 @@ class PintorPista extends CustomPainter {
     // Puntos de control aprendidos (ruta guardada del Administrador)
     for (int i = 0; i < puntosRuta.length; i++) {
       _puntoControl(canvas, g.puntoEn(puntosRuta[i]), 'P${i + 1}');
+    }
+
+    if (mostrarCheckpointsP05) {
+      final List<double> pcs = puntosControlM.length == 3
+          ? puntosControlM
+          : puntosControlEquitativos(g.trazado.largoM);
+      final double l = g.trazado.largoM > 0 ? g.trazado.largoM : 1.0;
+      _puntoControl(canvas, g.puntoEn(0), 'INICIO', arriba: true);
+      for (int i = 0; i < pcs.length; i++) {
+        final double frac = (pcs[i] / l).clamp(0.0, 1.0);
+        _puntoControl(canvas, g.puntoEn(frac), 'PC${i + 1}', arriba: false);
+      }
+      if (f != null) {
+        final Offset p = g.puntoEn(f);
+        final double ang = g.anguloEn(f);
+        _cono(canvas, g, p, ang);
+        _robot(canvas, p, ang);
+      }
+      return;
     }
 
     // PC2 de la especificación (PC1 y PC3 son el Punto de Control y el
@@ -494,8 +524,11 @@ class PintorPista extends CustomPainter {
       v.zona != zona ||
       v.trazado?.id != trazado?.id ||
       v.trazado?.largoM != trazado?.largoM ||
+      v.trazado?.cerrada != trazado?.cerrada ||
       v.vueltaCompleta != vueltaCompleta ||
       v.vueltaCompletada != vueltaCompletada ||
+      v.mostrarCheckpointsP05 != mostrarCheckpointsP05 ||
+      !listEquals(v.puntosControlM, puntosControlM) ||
       !listEquals(v.puntosRuta, puntosRuta);
 }
 
@@ -541,7 +574,19 @@ class TarjetaMapaPista extends StatelessWidget {
     final SimulacionPista? sim = servicio.pista;
     final PistaLocal? activa = context.watch<CatalogoPistas?>()?.activa;
     final double largo = sim?.longitudM ?? activa?.longitudM ?? largoCanonicoM;
-    final TrazadoPista trazado = TrazadoPista.paraPista(activa?.id, largo);
+    final TipoGeometriaPista geometria =
+        activa?.geometria ?? TipoGeometriaPista.circuitoCerrado;
+    final TrazadoPista trazado = TrazadoPista.paraPista(
+      activa?.id,
+      largo,
+      geometria: geometria,
+    );
+    final bool mostrarCheckpointsP05 =
+        activa != null &&
+        (activa.esLineal || (activa.id != 'A' && activa.esCircuitoCerrado));
+    final List<double> puntosControlM =
+        activa?.metricas?.puntosControlM ??
+        puntosControlEquitativos(trazado.largoM);
     final Estado? estado = servicio.ultimoEstado;
     final Ultrasonido? us = servicio.ultimoUltrasonido;
     final bool sinSenal = estadoSinSenal(estado);
@@ -569,7 +614,11 @@ class TarjetaMapaPista extends StatelessWidget {
           _Cabecera(
             demo: demo,
             enlace: enlace,
-            pista: activa?.nombre ?? 'Pista canónica',
+            pista: activa == null
+                ? 'Pista canónica'
+                : (mostrarCheckpointsP05
+                      ? '${activa.nombre} · ${activa.geometria.etiqueta}'
+                      : activa.nombre),
           ),
           const SizedBox(height: 12),
           _Mapa(
@@ -579,10 +628,17 @@ class TarjetaMapaPista extends StatelessWidget {
             hayDatos: e != null,
             puntosRuta: extras,
             trazado: trazado,
+            puntosControlM: puntosControlM,
+            mostrarCheckpointsP05: mostrarCheckpointsP05,
           ),
           const SizedBox(height: 8),
           Text(
-            textoEstaciones(trazado.largoM),
+            mostrarCheckpointsP05
+                ? textoPuntosControlEquitativos(
+                    trazado.largoM,
+                    puntosControlM: puntosControlM,
+                  )
+                : textoEstaciones(trazado.largoM),
             key: const Key('mapa-estaciones'),
             textAlign: TextAlign.center,
             style: CockpitText.telemetrySm.copyWith(
@@ -633,6 +689,20 @@ String textoEstaciones(double largoM) {
   final List<double> pc = puntosControlPara(largoM);
   return 'Cuarto 0,0 · PC1 ${metrosPista(pc[0])} · PC2 ${metrosPista(pc[1])} · '
       'PC3 / Lab. 1 ${metrosPista(pc[2])} · cierre ${metrosPista(largoM)} m';
+}
+
+/// Etiqueta de puntos de control equitativos (`L/3`, `2·L/3`, `L`) para pistas
+/// escaneadas con el Gemelo Digital (`P05`), tanto lineales como cerradas.
+String textoPuntosControlEquitativos(
+  double largoM, {
+  List<double>? puntosControlM,
+}) {
+  final List<double> pc =
+      (puntosControlM != null && puntosControlM.length == 3)
+      ? puntosControlM
+      : puntosControlEquitativos(largoM);
+  return 'Inicio 0,0 · PC1 ${metrosPista(pc[0])} · PC2 ${metrosPista(pc[1])} · '
+      'PC3 ${metrosPista(pc[2])} m';
 }
 
 class _Cabecera extends StatelessWidget {
@@ -700,6 +770,8 @@ class _Mapa extends StatelessWidget {
     required this.hayDatos,
     required this.puntosRuta,
     required this.trazado,
+    this.puntosControlM = const <double>[],
+    this.mostrarCheckpointsP05 = false,
   });
 
   final List<double> puntosRuta;
@@ -708,6 +780,8 @@ class _Mapa extends StatelessWidget {
   final Ultrasonido? us;
   final ZonaSonar zona;
   final bool hayDatos;
+  final List<double> puntosControlM;
+  final bool mostrarCheckpointsP05;
 
   @override
   Widget build(BuildContext context) {
@@ -767,6 +841,8 @@ class _Mapa extends StatelessWidget {
                       trazado: trazado,
                       vueltaCompleta: s?.modoVueltaCompleta ?? false,
                       vueltaCompletada: s?.vueltaCompletada ?? false,
+                      puntosControlM: puntosControlM,
+                      mostrarCheckpointsP05: mostrarCheckpointsP05,
                     ),
                   ),
                 ),

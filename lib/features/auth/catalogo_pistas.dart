@@ -4,7 +4,12 @@ import '../../core/pistas/trazado_pista.dart';
 import 'sesion_local.dart';
 
 export '../../core/pistas/trazado_pista.dart'
-    show largoCanonicoM, largoPistaAM, puntosControlPara;
+    show
+        TipoGeometriaPista,
+        largoCanonicoM,
+        largoPistaAM,
+        puntosControlEquitativos,
+        puntosControlPara;
 
 /// Estado de una pista en el catálogo.
 ///
@@ -51,6 +56,7 @@ class MetricasPista {
     required this.largoM,
     required this.puntosControlM,
     required this.segmentosValidados,
+    this.lecturasPorSegmento = const <int>[3, 3, 3],
     this.frenteMinimoCm,
     this.frenteMedioCm,
     this.firmaParedesCm = const <double>[],
@@ -61,11 +67,15 @@ class MetricasPista {
   /// Largo medido con la odometría (m).
   final double largoM;
 
-  /// Posición de PC1, PC2 y PC3 (m desde el inicio). PC3 cierra la vuelta.
+  /// Posición de PC1, PC2 y PC3 (m desde el inicio). En pistas escaneadas con
+  /// la lógica de P05 se distribuyen en tercios equitativos (`L/3`, `2·L/3`, `L`).
   final List<double> puntosControlM;
 
-  /// Segmento 1, 2 y 3 validados en los 3 viajes de verificación.
+  /// Segmento 1, 2 y 3 validados tras 3 lecturas por segmento.
   final List<bool> segmentosValidados;
+
+  /// Cantidad de lecturas completadas por cada uno de los 3 segmentos (meta: 3).
+  final List<int> lecturasPorSegmento;
 
   /// Perfil inicial del radar frontal (cm) en la lectura lenta.
   final double? frenteMinimoCm;
@@ -92,6 +102,7 @@ class PistaLocal {
     required this.id,
     required this.nombre,
     required this.longitudM,
+    this.geometria = TipoGeometriaPista.circuitoCerrado,
     this.torresControl = 0,
     this.base = false,
     this.estado = EstadoPista.pendiente,
@@ -103,6 +114,9 @@ class PistaLocal {
 
   /// Longitud en metros: la estimada al crearla y, tras el escaneo, la medida.
   final double longitudM;
+
+  /// Geometría elegida al crear la pista: **Circuito cerrado** o **Lineal**.
+  final TipoGeometriaPista geometria;
 
   /// Torres de control BLE. Por ahora toda pista es **básica**: `0`.
   final int torresControl;
@@ -116,6 +130,7 @@ class PistaLocal {
   final MetricasPista? metricas;
 
   bool get configurada => estado == EstadoPista.configurada;
+  bool get esLineal => geometria == TipoGeometriaPista.lineal;
 
   /// Tipo de viaje según `torresControl`: `0` = circuito cerrado (sin
   /// entregas), `>= 1` = entrega a laboratorio.
@@ -127,12 +142,14 @@ class PistaLocal {
 
   PistaLocal copiarCon({
     double? longitudM,
+    TipoGeometriaPista? geometria,
     EstadoPista? estado,
     MetricasPista? metricas,
   }) => PistaLocal(
     id: id,
     nombre: nombre,
     longitudM: longitudM ?? this.longitudM,
+    geometria: geometria ?? this.geometria,
     torresControl: torresControl,
     base: base,
     estado: estado ?? this.estado,
@@ -203,6 +220,7 @@ class CatalogoPistas extends ChangeNotifier {
   PistaLocal? agregarPista({
     required String nombre,
     required double longitudM,
+    TipoGeometriaPista geometria = TipoGeometriaPista.circuitoCerrado,
     int torresControl = 0,
   }) {
     final String limpio = nombre.trim();
@@ -211,6 +229,7 @@ class CatalogoPistas extends ChangeNotifier {
       id: 'P${_contador++}',
       nombre: limpio,
       longitudM: double.parse(longitudM.toStringAsFixed(2)),
+      geometria: geometria,
       torresControl: torresControl < 0 ? 0 : torresControl,
     );
     _pistas.add(nueva);

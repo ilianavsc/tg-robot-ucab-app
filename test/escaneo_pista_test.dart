@@ -24,32 +24,37 @@ void main() {
       final MetricasPista m = s.metricas!;
       expect(m.completa, isTrue);
       expect(m.largoM, closeTo(9.0, 0.01));
-      expect(m.puntosControlM, <double>[3.0, 4.5, 7.5]); // specs
+      expect(m.puntosControlM, <double>[3.0, 6.0, 9.0]); // tercios equitativos (P05)
       expect(m.segmentosValidados, <bool>[true, true, true]);
+      expect(m.lecturasPorSegmento, <int>[3, 3, 3]);
+      expect(s.totalLecturasCompletadas, 9);
       expect(m.firmaParedesCm.length, 3);
       expect(s.tiemposViajeS.length, 3);
       s.dispose();
     });
 
-    test('Etapa 1 fija el largo y el perfil de radar; Etapa 2 los PC1–PC3', () {
+    test('Etapa 1 fija el largo y el perfil de radar; Etapa 2 los PC1–PC3 equitativos (L/3)', () {
       final EscaneoPista s = EscaneoPista(pistaId: 'P1', largoEstimadoM: 6.0);
       expect(s.largoMedidoM, isNull);
       expect(s.puntosControlM, isEmpty);
       s.avanzar(s.duracionEtapaS + 0.01);
       expect(s.etapa, EtapaEscaneo.pasadaNormal);
       expect(s.largoMedidoM, closeTo(6.0, 0.01));
+      expect(s.distanciaVerificada, isTrue);
       expect(s.cuentasOdometria, greaterThan(0));
       expect(s.frenteMedioCm, isNotNull);
       expect(s.puntosControlM, isEmpty);
       s.avanzar(s.duracionEtapaS + 0.01);
       expect(s.etapa, EtapaEscaneo.viaje1);
-      expect(s.puntosControlM, <double>[2.0, 3.0, 5.0]); // 3/9, 4,5/9, 7,5/9
+      expect(s.puntosControlM, <double>[2.0, 4.0, 6.0]); // L/3, 2·L/3, L
       expect(s.tramoActual, (0.0, 2.0));
       expect(s.segmentosValidados, <bool>[false, false, false]);
+      expect(s.lecturasSegmento, <int>[0, 0, 0]);
       s.avanzar(s.duracionEtapaS + 0.01);
       expect(s.etapa, EtapaEscaneo.viaje2);
-      expect(s.tramoActual, (2.0, 3.0));
+      expect(s.tramoActual, (2.0, 4.0));
       expect(s.segmentosValidados, <bool>[true, false, false]);
+      expect(s.lecturasSegmento, <int>[3, 0, 0]);
       s.dispose();
     });
 

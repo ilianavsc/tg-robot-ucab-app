@@ -23,7 +23,7 @@ class PantallaEscaneoPista extends StatefulWidget {
     super.key,
     required this.catalogo,
     required this.pistaId,
-    this.velocidadReproduccion = 6,
+    this.velocidadReproduccion = 9,
     this.volverAlTerminar = const Duration(milliseconds: 1800),
   });
 
@@ -54,6 +54,7 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     _escaneo = EscaneoPista(
       pistaId: widget.pistaId,
       largoEstimadoM: _pista?.longitudM ?? 9.0,
+      geometria: _pista?.geometria ?? TipoGeometriaPista.circuitoCerrado,
     );
     _ticker = createTicker(_tick)..start();
   }
@@ -143,8 +144,10 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
                   Text(
                     listo
                         ? 'Escaneo completo · ${_escaneo.tiempoTotalS.toStringAsFixed(0)} s simulados'
-                        : '${_escaneo.etapa.titulo} · ${_m(_escaneo.posicionM)} m · '
-                              '${_m(_escaneo.velocidadMs)} m/s · reproducción ${widget.velocidadReproduccion.toStringAsFixed(0)}×',
+                        : '${_escaneo.etapa.titulo}'
+                              '${_escaneo.etapa.esViaje ? ' (lectura ${_escaneo.lecturaActualEnSegmento}/3)' : ''}'
+                              ' · ${_m(_escaneo.posicionM)} m · '
+                              '${_m(_escaneo.velocidadMs)} m/s',
                     key: const Key('escaneo-estado'),
                     style: CockpitText.telemetrySm.copyWith(
                       color: CockpitColors.onSurfaceVariant,
@@ -270,12 +273,13 @@ class _PintorEscaneo extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final Rect r = Rect.fromLTRB(28, 40, size.width - 28, size.height - 34);
     final double largo = e.largoM;
-    // Trazado real: la forma canónica de SIM1/SIM2 (escalada al largo de la
-    // pista nueva) o el circuito histórico de la Pista A.
-    final Path camino = caminoEnLienzo(
-      TrazadoPista.paraPista(e.pistaId, largo),
-      r,
+    // Trazado fiel al tipo elegido: circuito cerrado (Pista A / canónica) o lineal.
+    final TrazadoPista trazado = TrazadoPista.paraPista(
+      e.pistaId,
+      largo,
+      geometria: e.geometria,
     );
+    final Path camino = caminoEnLienzo(trazado, r);
     final PathMetric m = camino.computeMetrics().first;
     double f(double metros) => (metros / largo).clamp(0.0, 1.0) * m.length;
 
@@ -283,21 +287,26 @@ class _PintorEscaneo extends CustomPainter {
     canvas.drawPath(
       camino,
       Paint()
-        ..color = CockpitColors.outlineVariant
+        ..color = CockpitColors.outlineVariant.withValues(
+          alpha: _etapa == EtapaEscaneo.lecturaLenta ? 0.45 : 0.9,
+        )
         ..style = PaintingStyle.stroke
         ..strokeWidth = 6
         ..strokeCap = StrokeCap.round,
     );
 
+    final List<double> pcEquitativos = puntosControlEquitativos(largo);
     final List<double> pc = e.puntosControlM.isEmpty
-        ? const <double>[]
+        ? (_etapa == EtapaEscaneo.pasadaNormal
+              ? pcEquitativos.where((double p) => p <= _pos).toList()
+              : const <double>[])
         : e.puntosControlM;
     // segmentos validados (verde) y segmento activo (cian)
-    if (pc.length == 3) {
+    if (e.puntosControlM.length == 3) {
       final List<(double, double)> tramos = <(double, double)>[
-        (0, pc[0]),
-        (pc[0], pc[1]),
-        (pc[1], largo), // PC2 → PC3 → cierre
+        (0, e.puntosControlM[0]),
+        (e.puntosControlM[0], e.puntosControlM[1]),
+        (e.puntosControlM[1], largo),
       ];
       for (int i = 0; i < 3; i++) {
         final bool activo = _etapa.segmento == i;
@@ -328,22 +337,30 @@ class _PintorEscaneo extends CustomPainter {
       );
     }
 
-    // inicio (y cierre de la vuelta) y PC1–PC3 en su posición
+    // inicio y PC1–PC3 equitativos (tercios de la ruta)
+    final Offset inicioPos = m.getTangentForOffset(0)!.position;
     _marca(
       canvas,
-      m.getTangentForOffset(0)!.position,
+      inicioPos,
       'INICIO',
       CockpitColors.onSurfaceVariant,
-      abajo: m.getTangentForOffset(0)!.position.dy > r.center.dy,
+      abajo: trazado.cerrada ? inicioPos.dy > r.center.dy : false,
     );
     for (int i = 0; i < pc.length; i++) {
       final Offset q = m.getTangentForOffset(f(pc[i]))!.position;
-      _rombo(canvas, q, 'PC${i + 1}', abajo: q.dy > r.center.dy);
+      _rombo(
+        canvas,
+        q,
+        'PC${i + 1}',
+        abajo: trazado.cerrada ? q.dy > r.center.dy : true,
+      );
     }
 
     // robot
     final Tangent t = m.getTangentForOffset(
-      _etapa == EtapaEscaneo.completado ? 0 : f(_pos),
+      _etapa == EtapaEscaneo.completado
+          ? (trazado.cerrada ? 0 : m.length)
+          : f(_pos),
     )!;
     canvas.drawCircle(
       t.position,
@@ -539,11 +556,13 @@ class _Datos extends StatelessWidget {
   Widget build(BuildContext context) {
     final EscaneoPista e = escaneo;
     final List<(String, String)> filas = <(String, String)>[
+      ('Tipo de pista', e.geometria.etiqueta),
       (
         'Largo (odometría)',
         e.largoMedidoM == null
-            ? 'midiendo…'
-            : '${formato(e.largoMedidoM!)} m · ${e.cuentasOdometria} cuentas',
+            ? 'verificando…'
+            : '${formato(e.largoMedidoM!)} m · ${e.cuentasOdometria} cuentas'
+                  '${e.distanciaVerificada ? ' · OK' : ''}',
       ),
       (
         'Radar HC-SR04P (perfil)',
@@ -552,24 +571,20 @@ class _Datos extends StatelessWidget {
             : 'mín. ${e.frenteMinimoCm!.toStringAsFixed(0)} cm · medio ${e.frenteMedioCm!.toStringAsFixed(0)} cm',
       ),
       (
-        'Navegación base',
+        'Sensores base',
         e.largoMedidoM == null
             ? '—'
-            : 'TCRT5000 100 % · MPU-6050 360° · odometría',
+            : 'TCRT5000 100 % · MPU-6050 ${e.geometria == TipoGeometriaPista.lineal ? '0°' : '360°'} · odometría',
       ),
       (
-        'PC1 · PC2 · PC3',
+        'PC1 · PC2 · PC3 (L/3)',
         e.puntosControlM.isEmpty
             ? '—'
             : e.puntosControlM.map((double v) => '${formato(v)} m').join(' · '),
       ),
       (
-        'Firma de paredes',
-        e.firmaParedesCm.isEmpty
-            ? '—'
-            : e.firmaParedesCm
-                  .map((double v) => '${v.toStringAsFixed(0)} cm')
-                  .join(' · '),
+        'Lecturas por segmento',
+        '${e.lecturasSegmento.map((int n) => '$n/3').join(' · ')} (${e.totalLecturasCompletadas}/9)',
       ),
       (
         'Segmentos validados',

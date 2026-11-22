@@ -12,6 +12,7 @@ import 'package:robot_ucab_app/features/auth/registro_usuarios.dart';
 import 'package:robot_ucab_app/features/auth/sesion_local.dart';
 import 'package:robot_ucab_app/features/perfil/aprendizaje_ruta.dart';
 import 'package:robot_ucab_app/features/perfil/pantalla_perfil.dart';
+import 'package:robot_ucab_app/features/telemetria/mapa_pista.dart';
 import 'package:robot_ucab_app/main.dart' show PuertaAcceso;
 import 'package:robot_ucab_app/shared/widgets/pastilla_mqtt.dart';
 
@@ -32,10 +33,11 @@ Future<void> _cargarFuentes() async {
 }
 
 class _Entorno {
-  _Entorno(this.servicio, this.sesion, this.registro);
+  _Entorno(this.servicio, this.sesion, this.registro, this.catalogo);
   final MqttService servicio;
   final SesionLocal sesion;
   final RegistroUsuarios registro;
+  final CatalogoPistas catalogo;
 }
 
 /// Monta la app desde la puerta de acceso (Login o Telemetría según la sesión).
@@ -50,12 +52,14 @@ Future<_Entorno> _montar(
   final MqttService servicio = MqttService();
   final SesionLocal sesion = SesionLocal();
   final RegistroUsuarios registro = RegistroUsuarios();
+  final CatalogoPistas catalogo = CatalogoPistas();
   await t.pumpWidget(
     MultiProvider(
       providers: <ChangeNotifierProvider<ChangeNotifier>>[
         ChangeNotifierProvider<MqttService>.value(value: servicio),
         ChangeNotifierProvider<SesionLocal>.value(value: sesion),
         ChangeNotifierProvider<RegistroUsuarios>.value(value: registro),
+        ChangeNotifierProvider<CatalogoPistas>.value(value: catalogo),
         ChangeNotifierProvider<AprendizajeRuta>(
           create: (_) => AprendizajeRuta(),
         ),
@@ -67,7 +71,7 @@ Future<_Entorno> _montar(
     ),
   );
   await t.pump(const Duration(milliseconds: 100));
-  return _Entorno(servicio, sesion, registro);
+  return _Entorno(servicio, sesion, registro, catalogo);
 }
 
 Future<void> _cerrar(WidgetTester t, _Entorno e) async {
@@ -76,6 +80,7 @@ Future<void> _cerrar(WidgetTester t, _Entorno e) async {
   e.servicio.dispose();
   e.sesion.dispose();
   e.registro.dispose();
+  e.catalogo.dispose();
 }
 
 /// Desplaza la lista del Perfil hasta que [f] esté construido y a la vista.
@@ -515,6 +520,7 @@ void main() {
         expect(find.byKey(const Key('escaneo-listo')), findsOneWidget);
         expect(find.text('CONFIGURADA'), findsOneWidget);
         expect(find.text('3/3'), findsOneWidget);
+        expect(find.text('3/3 · 3/3 · 3/3 (9/9)'), findsOneWidget);
         // vuelve solo al Login
         await t.pump(const Duration(seconds: 2));
         await t.pump();
@@ -531,6 +537,63 @@ void main() {
         );
         await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
+        expect(t.takeException(), isNull);
+        await _cerrar(t, e);
+      },
+    );
+
+    testWidgets(
+      '+ Nueva pista permite elegir Lineal (Pista B), escanea con checkpoints L/3 y 3 lecturas/segmento y dibuja mapa lineal',
+      (WidgetTester t) async {
+        final _Entorno e = await _montar(t);
+        await _tocar(t, find.byKey(const Key('login-pistas')));
+        await _tocar(t, find.byKey(const Key('pista-nueva')));
+        expect(find.byKey(const Key('nueva-pista-tipo')), findsOneWidget);
+        await _tocar(t, find.byKey(const Key('tipo-pista-lineal')));
+        await t.enterText(
+          find.byKey(const Key('nueva-pista-nombre')),
+          'Pista B',
+        );
+        await t.enterText(find.byKey(const Key('nueva-pista-largo')), '9.0');
+        await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
+
+        // Verifica que la pista nació Lineal y escanea todas las etapas
+        expect(e.catalogo.activa!.geometria, TipoGeometriaPista.lineal);
+        expect(find.byKey(const Key('escaneo-lienzo')), findsOneWidget);
+        expect(find.text('Lineal'), findsOneWidget);
+
+        for (int i = 0; i < 600; i++) {
+          if (find.byKey(const Key('escaneo-listo')).evaluate().isNotEmpty) {
+            break;
+          }
+          await t.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.byKey(const Key('escaneo-listo')), findsOneWidget);
+        expect(find.text('3,00 m · 6,00 m · 9,00 m'), findsOneWidget);
+        expect(find.text('3/3 · 3/3 · 3/3 (9/9)'), findsOneWidget);
+        expect(e.catalogo.activa!.configurada, isTrue);
+        expect(
+          e.catalogo.activa!.metricas!.puntosControlM,
+          <double>[3.0, 6.0, 9.0],
+        );
+
+        // Vuelve al Login y entra como Operador (user/user)
+        await _tocar(t, find.byKey(const Key('escaneo-listo')));
+        await _entrarCon(t, 'user', 'user');
+        expect(e.sesion.activa, isTrue);
+
+        // El mapa principal dibuja la ruta lineal con checkpoints equitativos
+        final CustomPaint lienzo = t.widget<CustomPaint>(
+          find.byKey(const Key('mapa-pista-lienzo')),
+        );
+        final PintorPista pintor = lienzo.painter! as PintorPista;
+        expect(pintor.trazado!.cerrada, isFalse);
+        expect(pintor.mostrarCheckpointsP05, isTrue);
+        expect(
+          t.widget<Text>(find.byKey(const Key('mapa-estaciones'))).data,
+          'Inicio 0,0 · PC1 3,0 · PC2 6,0 · PC3 9,0 m',
+        );
+        expect(find.text('Pista lineal · recorrido completo'), findsOneWidget);
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
       },
