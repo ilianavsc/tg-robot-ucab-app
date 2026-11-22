@@ -557,8 +557,13 @@ void main() {
         await t.enterText(find.byKey(const Key('nueva-pista-largo')), '9.0');
         await _tocar(t, find.byKey(const Key('nueva-pista-crear')));
 
-        // Verifica que la pista nació Lineal y escanea todas las etapas
+        // Verifica que la pista nació Lineal, aviso Admin sin obstáculos y escanea todas las etapas
         expect(e.catalogo.activa!.geometria, TipoGeometriaPista.lineal);
+        expect(find.byKey(const Key('escaneo-aviso-admin')), findsOneWidget);
+        expect(
+          find.text('Calibración guiada por Administrador'),
+          findsOneWidget,
+        );
         expect(find.byKey(const Key('escaneo-lienzo')), findsOneWidget);
         expect(find.text('Lineal'), findsOneWidget);
 

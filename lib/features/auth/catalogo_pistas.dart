@@ -46,6 +46,95 @@ enum TipoViajePista {
   final String etiqueta;
 }
 
+/// Clasificación de una lectura ultrasónica frontal frente al perfil de paredes
+/// fijas calibrado durante el escaneo del Gemelo Digital.
+enum ClasificacionRadar {
+  libre('Libre'),
+  paredFija('Pared fija calibrada'),
+  obstaculoNuevo('Obstáculo nuevo');
+
+  const ClasificacionRadar(this.etiqueta);
+
+  final String etiqueta;
+}
+
+/// Perfil de referencia calibrado para una sección de la pista (`Inicio → PC1`,
+/// `PC1 → PC2` o `PC2 → PC3`). Se consolida en los 3 escaneos de la Fase 3 y se
+/// afina de forma incremental con cada viaje normal posterior.
+class PerfilSeccion {
+  const PerfilSeccion({
+    required this.indice,
+    required this.nombre,
+    required this.desdeM,
+    required this.hastaM,
+    required this.tiempoEstimadoS,
+    required this.velocidadRefMs,
+    required this.paredFijaCm,
+    this.margenObstaculoCm = 25.0,
+    this.muestrasViajes = 3,
+  });
+
+  final int indice;
+  final String nombre;
+  final double desdeM;
+  final double hastaM;
+  final double tiempoEstimadoS;
+  final double velocidadRefMs;
+
+  /// Distancia ultrasónica frontal esperada a paredes/estructuras fijas (cm).
+  final double paredFijaCm;
+
+  /// Umbral de desviación (cm) por debajo de [paredFijaCm] para distinguir un
+  /// obstáculo temporal nuevo de una pared fija calibrada.
+  final double margenObstaculoCm;
+
+  /// Cantidad de lecturas/viajes acumulados en el perfil incremental.
+  final int muestrasViajes;
+
+  /// `true` si [lecturaCm] está significativamente más cerca que la pared fija
+  /// aprendida durante la calibración sin obstáculos.
+  bool esObstaculoAnomalo(double lecturaCm) {
+    if (lecturaCm <= 0) return false;
+    return lecturaCm < (paredFijaCm - margenObstaculoCm);
+  }
+
+  /// `true` si [lecturaCm] coincide con la pared fija aprendida en esta sección.
+  bool coincideConParedFija(double lecturaCm) {
+    if (lecturaCm <= 0) return false;
+    return (lecturaCm - paredFijaCm).abs() <= margenObstaculoCm;
+  }
+
+  /// Afina incrementalmente las métricas de esta sección con un viaje normal.
+  PerfilSeccion afinarConViaje({
+    required double tiempoS,
+    required double velocidadMs,
+    double? lecturaParedCm,
+  }) {
+    final int n = muestrasViajes + 1;
+    double avg(double prev, double nuevo) =>
+        double.parse(((prev * muestrasViajes + nuevo) / n).toStringAsFixed(2));
+    // Solo incorpora la lectura de radar al perfil de pared fija si no es un
+    // obstáculo anómalo temporal.
+    final bool paredValida =
+        lecturaParedCm != null &&
+        lecturaParedCm > 0 &&
+        !esObstaculoAnomalo(lecturaParedCm);
+    return PerfilSeccion(
+      indice: indice,
+      nombre: nombre,
+      desdeM: desdeM,
+      hastaM: hastaM,
+      tiempoEstimadoS: avg(tiempoEstimadoS, tiempoS),
+      velocidadRefMs: avg(velocidadRefMs, velocidadMs),
+      paredFijaCm: paredValida
+          ? avg(paredFijaCm, lecturaParedCm)
+          : paredFijaCm,
+      margenObstaculoCm: margenObstaculoCm,
+      muestrasViajes: n,
+    );
+  }
+}
+
 /// Métricas base que deja el escaneo del Gemelo Digital (modo básico).
 ///
 /// Todo es **simulación (SIL)**: el largo sale de la odometría simulada, el
@@ -57,6 +146,8 @@ class MetricasPista {
     required this.puntosControlM,
     required this.segmentosValidados,
     this.lecturasPorSegmento = const <int>[3, 3, 3],
+    this.perfilesSeccion = const <PerfilSeccion>[],
+    this.viajesOperacion = 0,
     this.frenteMinimoCm,
     this.frenteMedioCm,
     this.firmaParedesCm = const <double>[],
@@ -77,6 +168,12 @@ class MetricasPista {
   /// Cantidad de lecturas completadas por cada uno de los 3 segmentos (meta: 3).
   final List<int> lecturasPorSegmento;
 
+  /// Perfiles de referencia consolidados por sección (Fase 3 + aprendizaje continuo).
+  final List<PerfilSeccion> perfilesSeccion;
+
+  /// Cantidad de viajes en operación normal que ya afinaron el perfil de la pista.
+  final int viajesOperacion;
+
   /// Perfil inicial del radar frontal (cm) en la lectura lenta.
   final double? frenteMinimoCm;
   final double? frenteMedioCm;
@@ -94,6 +191,74 @@ class MetricasPista {
       puntosControlM.length == 3 &&
       segmentosValidados.length == 3 &&
       segmentosValidados.every((bool v) => v);
+
+  /// Devuelve el [PerfilSeccion] correspondiente a [posicionM] sobre la pista.
+  PerfilSeccion? seccionEn(double posicionM) {
+    if (perfilesSeccion.isEmpty) return null;
+    final double pos = posicionM.clamp(0.0, largoM);
+    for (final PerfilSeccion s in perfilesSeccion) {
+      if (pos <= s.hastaM + 1e-6) return s;
+    }
+    return perfilesSeccion.last;
+  }
+
+  /// Distingue si [frenteCm] en [posicionM] corresponde a una pared fija
+  /// aprendida en la calibración, a un obstáculo temporal nuevo o a vía libre.
+  ClasificacionRadar clasificarLecturaRadar({
+    required double posicionM,
+    required double? frenteCm,
+  }) {
+    if (frenteCm == null || frenteCm <= 0) return ClasificacionRadar.libre;
+    final PerfilSeccion? sec = seccionEn(posicionM);
+    if (sec == null) {
+      return frenteCm < 50.0
+          ? ClasificacionRadar.obstaculoNuevo
+          : ClasificacionRadar.libre;
+    }
+    if (sec.esObstaculoAnomalo(frenteCm)) {
+      return ClasificacionRadar.obstaculoNuevo;
+    }
+    if (sec.coincideConParedFija(frenteCm)) {
+      return ClasificacionRadar.paredFija;
+    }
+    return ClasificacionRadar.libre;
+  }
+
+  /// Devuelve nuevas métricas afinadas con un viaje completado en operación.
+  MetricasPista afinarConViaje({
+    required double duracionTotalS,
+    required double velocidadMediaMs,
+    List<double>? lecturasParedCm,
+  }) {
+    if (perfilesSeccion.isEmpty) return this;
+    final double durSeccion = duracionTotalS / perfilesSeccion.length;
+    final List<PerfilSeccion> afinados = <PerfilSeccion>[
+      for (int i = 0; i < perfilesSeccion.length; i++)
+        perfilesSeccion[i].afinarConViaje(
+          tiempoS: durSeccion,
+          velocidadMs: velocidadMediaMs,
+          lecturaParedCm:
+              (lecturasParedCm != null && i < lecturasParedCm.length)
+              ? lecturasParedCm[i]
+              : null,
+        ),
+    ];
+    return MetricasPista(
+      largoM: largoM,
+      puntosControlM: puntosControlM,
+      segmentosValidados: segmentosValidados,
+      lecturasPorSegmento: lecturasPorSegmento,
+      perfilesSeccion: afinados,
+      viajesOperacion: viajesOperacion + 1,
+      frenteMinimoCm: frenteMinimoCm,
+      frenteMedioCm: frenteMedioCm,
+      firmaParedesCm: <double>[
+        for (final PerfilSeccion s in afinados) s.paredFijaCm,
+      ],
+      giroTotalGrados: giroTotalGrados,
+      lineaVistaPct: lineaVistaPct,
+    );
+  }
 }
 
 /// Configuración de una pista disponible en el laboratorio.
@@ -165,6 +330,7 @@ class PistaLocal {
 /// (`torresControl = 0`) y **pendientes** hasta completar su escaneo.
 class CatalogoPistas extends ChangeNotifier {
   CatalogoPistas() {
+    final List<double> pcsA = puntosControlPara(8.05);
     _pistas.add(
       PistaLocal(
         id: 'A',
@@ -174,8 +340,38 @@ class CatalogoPistas extends ChangeNotifier {
         estado: EstadoPista.configurada,
         metricas: MetricasPista(
           largoM: 8.05,
-          puntosControlM: puntosControlPara(8.05),
+          puntosControlM: pcsA,
           segmentosValidados: const <bool>[true, true, true],
+          perfilesSeccion: <PerfilSeccion>[
+            PerfilSeccion(
+              indice: 0,
+              nombre: 'Sección 1 (Inicio → PC1)',
+              desdeM: 0,
+              hastaM: pcsA[0],
+              tiempoEstimadoS: 6.5,
+              velocidadRefMs: 0.41,
+              paredFijaCm: 142.0,
+            ),
+            PerfilSeccion(
+              indice: 1,
+              nombre: 'Sección 2 (PC1 → PC2)',
+              desdeM: pcsA[0],
+              hastaM: pcsA[1],
+              tiempoEstimadoS: 3.3,
+              velocidadRefMs: 0.41,
+              paredFijaCm: 136.0,
+            ),
+            PerfilSeccion(
+              indice: 2,
+              nombre: 'Sección 3 (PC2 → cierre)',
+              desdeM: pcsA[1],
+              hastaM: 8.05,
+              tiempoEstimadoS: 9.8,
+              velocidadRefMs: 0.41,
+              paredFijaCm: 145.0,
+            ),
+          ],
+          firmaParedesCm: const <double>[142.0, 136.0, 145.0],
         ),
       ),
     );
@@ -250,6 +446,29 @@ class CatalogoPistas extends ChangeNotifier {
       metricas: metricas,
     );
     _activaId = id;
+    notifyListeners();
+    return true;
+  }
+
+  /// Afina incrementalmente las métricas de una pista ya configurada tras
+  /// completar un viaje en operación normal (aprendizaje continuo).
+  bool registrarViajeOperacion(
+    String id, {
+    required double duracionTotalS,
+    required double velocidadMediaMs,
+    List<double>? lecturasParedCm,
+  }) {
+    final int i = _pistas.indexWhere((PistaLocal p) => p.id == id);
+    if (i < 0) return false;
+    final PistaLocal pista = _pistas[i];
+    if (!pista.configurada || pista.metricas == null) return false;
+    _pistas[i] = pista.copiarCon(
+      metricas: pista.metricas!.afinarConViaje(
+        duracionTotalS: duracionTotalS,
+        velocidadMediaMs: velocidadMediaMs,
+        lecturasParedCm: lecturasParedCm,
+      ),
+    );
     notifyListeners();
     return true;
   }

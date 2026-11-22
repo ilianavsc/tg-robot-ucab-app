@@ -94,5 +94,88 @@ void main() {
       s.dispose();
       c.dispose();
     });
+
+    test(
+      'descubrimiento progresivo (sin silueta previa en Fase 1, trazo en Fase 2 y perfil por sección en Fase 3)',
+      () {
+        final EscaneoPista s = EscaneoPista(pistaId: 'P2', largoEstimadoM: 9.0);
+        expect(s.siluetaPreviaVisible, isFalse);
+        expect(s.etapa, EtapaEscaneo.lecturaLenta);
+        expect(s.fraccionRutaDescubierta, 0.0);
+        s.avanzar(s.duracionEtapaS * 0.5);
+        expect(s.fraccionRutaDescubierta, 0.0);
+        expect(s.puntosControlM, isEmpty);
+
+        // Fase 2: primer dibujo progresivo
+        s.avanzar(s.duracionEtapaS * 0.5 + 0.01);
+        expect(s.etapa, EtapaEscaneo.pasadaNormal);
+        s.avanzar(s.duracionEtapaS * 0.5);
+        expect(s.fraccionRutaDescubierta, closeTo(0.5, 0.05));
+
+        // Al terminar Fase 3: 3 perfiles de sección consolidados
+        s.completarTodo();
+        expect(s.fraccionRutaDescubierta, 1.0);
+        final MetricasPista m = s.metricas!;
+        expect(m.perfilesSeccion.length, 3);
+        for (int i = 0; i < 3; i++) {
+          expect(m.perfilesSeccion[i].muestrasViajes, 3);
+          expect(m.perfilesSeccion[i].paredFijaCm, greaterThan(100));
+          expect(m.perfilesSeccion[i].tiempoEstimadoS, greaterThan(0));
+        }
+        s.dispose();
+      },
+    );
+
+    test(
+      'diferencia pared fija calibrada vs obstáculo nuevo y afina incrementalmente en operación normal',
+      () {
+        final CatalogoPistas c = CatalogoPistas();
+        final PistaLocal p = c.agregarPista(
+          nombre: 'Pista B',
+          longitudM: 9.0,
+          geometria: TipoGeometriaPista.lineal,
+        )!;
+        final EscaneoPista s = EscaneoPista(
+          pistaId: p.id,
+          largoEstimadoM: 9.0,
+          geometria: p.geometria,
+        );
+        s.completarTodo();
+        c.completarEscaneo(p.id, s.metricas!);
+
+        final MetricasPista base = c.porId(p.id)!.metricas!;
+        final double paredS1 = base.perfilesSeccion[0].paredFijaCm;
+
+        // Lectura dentro del margen de la pared calibrada -> pared fija
+        expect(
+          base.clasificarLecturaRadar(posicionM: 1.5, frenteCm: paredS1 - 5),
+          ClasificacionRadar.paredFija,
+        );
+        // Lectura muy por debajo de la pared fija -> obstáculo temporal nuevo
+        expect(
+          base.clasificarLecturaRadar(posicionM: 1.5, frenteCm: 35.0),
+          ClasificacionRadar.obstaculoNuevo,
+        );
+
+        // Aprendizaje continuo: un viaje normal afina tiempos y no deja que un
+        // obstáculo temporal corrompa el perfil de pared fija
+        expect(
+          c.registrarViajeOperacion(
+            p.id,
+            duracionTotalS: 21.0,
+            velocidadMediaMs: 0.43,
+            lecturasParedCm: <double>[30.0, paredS1, paredS1],
+          ),
+          isTrue,
+        );
+        final MetricasPista afinada = c.porId(p.id)!.metricas!;
+        expect(afinada.viajesOperacion, 1);
+        expect(afinada.perfilesSeccion[0].muestrasViajes, 4);
+        // La lectura anómala de 30 cm NO corrompió paredFijaCm de la sección 1
+        expect(afinada.perfilesSeccion[0].paredFijaCm, paredS1);
+        s.dispose();
+        c.dispose();
+      },
+    );
   });
 }

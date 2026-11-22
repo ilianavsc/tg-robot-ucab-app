@@ -5,21 +5,30 @@ import 'package:flutter/foundation.dart';
 import 'catalogo_pistas.dart';
 
 /// Etapas del escaneo de nueva pista alineado con el Gemelo Digital (`P05`):
-/// 1. **Escaneo lento**: verifica la distancia estimada y captura inicial de sensores.
-/// 2. **Recorrido normal**: revalida sensores y fija 3 puntos de control equitativos (`L / 3`).
-/// 3. **Lecturas por segmento**: 3 lecturas de cada segmento entre puntos de control.
+/// 1. **Escaneo lento**: dimensiones del fondo digital y captura inicial de sensores.
+/// 2. **Recorrido normal**: primer dibujo digital de la ruta y 3 puntos de referencia equitativos (`L / 3`).
+/// 3. **3 escaneos de referencia por sección**: consolida tiempo estimado, velocidad y paredes fijas por sección.
 enum EtapaEscaneo {
   lecturaLenta(
     'Escaneo lento',
-    'Verifica distancia de la pista y captura inicial de sensores',
+    'Dimensiones del fondo digital y lectura base de sensores (sin obstáculos)',
   ),
   pasadaNormal(
     'Recorrido normal',
-    'Revalida sensores y fija 3 puntos de control equitativos (L/3)',
+    'Primer dibujo digital de la ruta y 3 puntos de referencia (L/3)',
   ),
-  viaje1('Segmento 1 · 3 lecturas', '3 lecturas entre Inicio y PC1 (1/3)'),
-  viaje2('Segmento 2 · 3 lecturas', '3 lecturas entre PC1 y PC2 (2/3)'),
-  viaje3('Segmento 3 · 3 lecturas', '3 lecturas entre PC2 y PC3 (3/3)'),
+  viaje1(
+    'Sección 1 · 3 escaneos',
+    'Perfil de referencia Inicio → PC1 (tiempo, velocidad y paredes fijas)',
+  ),
+  viaje2(
+    'Sección 2 · 3 escaneos',
+    'Perfil de referencia PC1 → PC2 (tiempo, velocidad y paredes fijas)',
+  ),
+  viaje3(
+    'Sección 3 · 3 escaneos',
+    'Perfil de referencia PC2 → PC3 (tiempo, velocidad y paredes fijas)',
+  ),
   completado('Completado', 'Pista configurada');
 
   const EtapaEscaneo(this.titulo, this.detalle);
@@ -88,6 +97,7 @@ class EscaneoPista extends ChangeNotifier {
   final List<bool> _segmentos = <bool>[false, false, false];
   final List<int> _lecturasSegmento = <int>[0, 0, 0];
   final List<double> _tiemposViaje = <double>[0, 0, 0];
+  final List<PerfilSeccion?> _perfiles = <PerfilSeccion?>[null, null, null];
 
   EtapaEscaneo get etapa => _etapa;
   bool get completado => _etapa == EtapaEscaneo.completado;
@@ -101,6 +111,19 @@ class EscaneoPista extends ChangeNotifier {
   List<bool> get segmentosValidados => List<bool>.unmodifiable(_segmentos);
   List<int> get lecturasSegmento => List<int>.unmodifiable(_lecturasSegmento);
   List<double> get tiemposViajeS => List<double>.unmodifiable(_tiemposViaje);
+  List<PerfilSeccion> get perfilesSeccion =>
+      _perfiles.whereType<PerfilSeccion>().toList(growable: false);
+
+  /// Nunca se muestra una silueta pre-dibujada antes de recorrer la pista.
+  bool get siluetaPreviaVisible => false;
+
+  /// Fracción del primer dibujo digital trazada (`0` en Fase 1, `0..1` en Fase 2,
+  /// `1` a partir de la Fase 3).
+  double get fraccionRutaDescubierta {
+    if (_etapa == EtapaEscaneo.lecturaLenta) return 0.0;
+    if (_etapa == EtapaEscaneo.pasadaNormal) return progresoEtapa;
+    return 1.0;
+  }
 
   /// `true` cuando el largo medido en el escaneo lento coincide con el estimado.
   bool get distanciaVerificada =>
@@ -243,9 +266,29 @@ class EscaneoPista extends ChangeNotifier {
       case EtapaEscaneo.viaje2:
       case EtapaEscaneo.viaje3:
         final int s = _etapa.segmento!;
+        final (double desde, double hasta) = tramoActual;
+        final double tiempoRef = double.parse(
+          ((hasta - desde) / velocidadNormalMs).toStringAsFixed(2),
+        );
+        final double paredCm = s < _firma.length ? _firma[s] : 135.0;
+        const List<String> nombres = <String>[
+          'Sección 1 (Inicio → PC1)',
+          'Sección 2 (PC1 → PC2)',
+          'Sección 3 (PC2 → PC3)',
+        ];
         _lecturasSegmento[s] = lecturasRequeridasPorSegmento;
         _segmentos[s] = true;
         _tiemposViaje[s] = double.parse(duracionEtapaS.toStringAsFixed(1));
+        _perfiles[s] = PerfilSeccion(
+          indice: s,
+          nombre: nombres[s],
+          desdeM: desde,
+          hastaM: hasta,
+          tiempoEstimadoS: tiempoRef,
+          velocidadRefMs: velocidadNormalMs,
+          paredFijaCm: paredCm,
+          muestrasViajes: lecturasRequeridasPorSegmento,
+        );
       case EtapaEscaneo.completado:
         return;
     }
@@ -261,6 +304,7 @@ class EscaneoPista extends ChangeNotifier {
       puntosControlM: List<double>.of(_puntosControl),
       segmentosValidados: List<bool>.of(_segmentos),
       lecturasPorSegmento: List<int>.of(_lecturasSegmento),
+      perfilesSeccion: perfilesSeccion,
       frenteMinimoCm: _frenteMinimoCm,
       frenteMedioCm: _frenteMedioCm,
       firmaParedesCm: List<double>.of(_firma),

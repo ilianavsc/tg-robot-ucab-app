@@ -102,6 +102,7 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
       backgroundColor: CockpitColors.surface,
       appBar: AppBar(
         backgroundColor: CockpitColors.surface,
+        centerTitle: true,
         leading: IconButton(
           key: const Key('escaneo-salir'),
           tooltip: 'Salir del escaneo (la pista queda pendiente)',
@@ -114,12 +115,13 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
         ),
       ),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: SingleChildScrollView(
-              key: const Key('escaneo-lista'),
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: SingleChildScrollView(
+          key: const Key('escaneo-lista'),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -127,6 +129,8 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
                     nombre: pista?.nombre ?? '—',
                     configurada: listo && _guardada,
                   ),
+                  const SizedBox(height: 10),
+                  const _AvisoCalibracionAdmin(),
                   const SizedBox(height: 12),
                   _Lienzo(escaneo: _escaneo),
                   const SizedBox(height: 8),
@@ -188,6 +192,59 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
   }
 }
 
+/// Aviso visible durante toda la calibración: proceso guiado por Administrador
+/// con la pista despejada de obstáculos temporales.
+class _AvisoCalibracionAdmin extends StatelessWidget {
+  const _AvisoCalibracionAdmin();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('escaneo-aviso-admin'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: CockpitColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(CockpitRadius.md),
+        border: Border.all(
+          color: CockpitColors.warning.withValues(alpha: 0.40),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(
+            Icons.admin_panel_settings_outlined,
+            size: 18,
+            color: CockpitColors.warning,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Calibración guiada por Administrador',
+                  style: CockpitText.labelMd.copyWith(
+                    color: CockpitColors.warning,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Garantiza que no haya obstáculos temporales en la pista '
+                  'para aprender únicamente las paredes fijas del entorno.',
+                  style: CockpitText.bodySm.copyWith(
+                    color: CockpitColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Cabecera extends StatelessWidget {
   const _Cabecera({required this.nombre, required this.configurada});
 
@@ -244,7 +301,8 @@ class _Lienzo extends StatelessWidget {
           'robot en ${escaneo.posicionM.toStringAsFixed(1)} m',
       child: Container(
         key: const Key('escaneo-lienzo'),
-        height: 200,
+        width: double.infinity,
+        height: 210,
         decoration: BoxDecoration(
           color: CockpitColors.surfaceLowest,
           borderRadius: BorderRadius.circular(CockpitRadius.lg),
@@ -252,7 +310,10 @@ class _Lienzo extends StatelessWidget {
             color: CockpitColors.outlineVariant.withValues(alpha: 0.6),
           ),
         ),
-        child: CustomPaint(painter: _PintorEscaneo(escaneo)),
+        child: CustomPaint(
+          key: const Key('escaneo-lienzo-paint'),
+          painter: _PintorEscaneo(escaneo),
+        ),
       ),
     );
   }
@@ -273,7 +334,7 @@ class _PintorEscaneo extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final Rect r = Rect.fromLTRB(28, 40, size.width - 28, size.height - 34);
     final double largo = e.largoM;
-    // Trazado fiel al tipo elegido: circuito cerrado (Pista A / canónica) o lineal.
+    // Trazado subyacente descubierto progresivamente (nunca pre-dibujado antes).
     final TrazadoPista trazado = TrazadoPista.paraPista(
       e.pistaId,
       largo,
@@ -283,61 +344,119 @@ class _PintorEscaneo extends CustomPainter {
     final PathMetric m = camino.computeMetrics().first;
     double f(double metros) => (metros / largo).clamp(0.0, 1.0) * m.length;
 
-    // pista base
-    canvas.drawPath(
-      camino,
-      Paint()
-        ..color = CockpitColors.outlineVariant.withValues(
-          alpha: _etapa == EtapaEscaneo.lecturaLenta ? 0.45 : 0.9,
-        )
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..strokeCap = StrokeCap.round,
-    );
+    // Fondo digital en blanco con cuadrícula tenue (sin silueta previa)
+    final Paint rejilla = Paint()
+      ..color = CockpitColors.outlineVariant.withValues(alpha: 0.16)
+      ..strokeWidth = 1;
+    for (double x = 0; x <= size.width; x += 24) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), rejilla);
+    }
+    for (double y = 0; y <= size.height; y += 24) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), rejilla);
+    }
 
-    final List<double> pcEquitativos = puntosControlEquitativos(largo);
-    final List<double> pc = e.puntosControlM.isEmpty
-        ? (_etapa == EtapaEscaneo.pasadaNormal
-              ? pcEquitativos.where((double p) => p <= _pos).toList()
-              : const <double>[])
-        : e.puntosControlM;
-    // segmentos validados (verde) y segmento activo (cian)
-    if (e.puntosControlM.length == 3) {
-      final List<(double, double)> tramos = <(double, double)>[
-        (0, e.puntosControlM[0]),
-        (e.puntosControlM[0], e.puntosControlM[1]),
-        (e.puntosControlM[1], largo),
-      ];
-      for (int i = 0; i < 3; i++) {
-        final bool activo = _etapa.segmento == i;
-        if (!_seg[i] && !activo) continue;
-        canvas.drawPath(
-          m.extractPath(f(tramos[i].$1), f(tramos[i].$2)),
+    final bool enLenta = _etapa == EtapaEscaneo.lecturaLenta;
+    final bool enNormal = _etapa == EtapaEscaneo.pasadaNormal;
+    final bool enSecciones = _etapa.esViaje || _etapa == EtapaEscaneo.completado;
+
+    // Encuadre del fondo digital: en Fase 1 crece con lo recorrido; desde Fase 2
+    // queda fijado con las dimensiones medidas del plano.
+    if (enLenta) {
+      if (_pos > 0.02) {
+        final Path descubierto = m.extractPath(0, f(_pos));
+        final Rect marco = descubierto.getBounds().inflate(10);
+        canvas.drawRect(
+          marco,
           Paint()
-            ..color = _seg[i]
-                ? CockpitColors.ok
-                : CockpitColors.primary.withValues(alpha: 0.35)
+            ..color = CockpitColors.warning.withValues(alpha: 0.35)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 6,
+            ..strokeWidth = 1.2,
+        );
+        _punteado(
+          canvas,
+          descubierto,
+          CockpitColors.warning.withValues(alpha: 0.85),
+          2.6,
+        );
+      }
+    } else if (enNormal) {
+      // Fondo acotado + primer dibujo digital trazado en vivo (0 -> _pos)
+      final Rect marcoFijo = camino.getBounds().inflate(10);
+      canvas.drawRect(
+        marcoFijo,
+        Paint()
+          ..color = CockpitColors.outlineVariant.withValues(alpha: 0.35)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      if (_pos > 0.02) {
+        canvas.drawPath(
+          m.extractPath(0, f(_pos)),
+          Paint()
+            ..color = CockpitColors.primary
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 5
+            ..strokeCap = StrokeCap.round,
+        );
+      }
+    } else if (enSecciones) {
+      // Ruta digital V1 descubierta en Fase 2 + consolidación por sección
+      final Rect marcoFijo = camino.getBounds().inflate(10);
+      canvas.drawRect(
+        marcoFijo,
+        Paint()
+          ..color = CockpitColors.outlineVariant.withValues(alpha: 0.28)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
+      canvas.drawPath(
+        camino,
+        Paint()
+          ..color = CockpitColors.outlineVariant.withValues(alpha: 0.75)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5
+          ..strokeCap = StrokeCap.round,
+      );
+      if (e.puntosControlM.length == 3) {
+        final List<(double, double)> tramos = <(double, double)>[
+          (0, e.puntosControlM[0]),
+          (e.puntosControlM[0], e.puntosControlM[1]),
+          (e.puntosControlM[1], largo),
+        ];
+        for (int i = 0; i < 3; i++) {
+          final bool activo = _etapa.segmento == i;
+          if (!_seg[i] && !activo) continue;
+          canvas.drawPath(
+            m.extractPath(f(tramos[i].$1), f(tramos[i].$2)),
+            Paint()
+              ..color = _seg[i]
+                  ? CockpitColors.ok
+                  : CockpitColors.primary.withValues(alpha: 0.45)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 5.5,
+          );
+        }
+      }
+      final (double a, double _) = e.tramoActual;
+      if (_etapa != EtapaEscaneo.completado && _pos > a) {
+        canvas.drawPath(
+          m.extractPath(f(a), f(_pos)),
+          Paint()
+            ..color = CockpitColors.primary
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 5.5
+            ..strokeCap = StrokeCap.round,
         );
       }
     }
-    // recorrido de la etapa actual
-    final (double a, double _) = e.tramoActual;
-    if (_etapa != EtapaEscaneo.completado && _pos > a) {
-      canvas.drawPath(
-        m.extractPath(f(a), f(_pos)),
-        Paint()
-          ..color = _etapa == EtapaEscaneo.lecturaLenta
-              ? CockpitColors.warning
-              : CockpitColors.primary
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 6
-          ..strokeCap = StrokeCap.round,
-      );
-    }
 
-    // inicio y PC1–PC3 equitativos (tercios de la ruta)
+    // Inicio visible desde el primer avance; PC1–PC3 se revelan en Fase 2
+    final List<double> pcEquitativos = puntosControlEquitativos(largo);
+    final List<double> pc = enLenta
+        ? const <double>[]
+        : (e.puntosControlM.isEmpty
+              ? pcEquitativos.where((double p) => p <= _pos).toList()
+              : e.puntosControlM);
     final Offset inicioPos = m.getTangentForOffset(0)!.position;
     _marca(
       canvas,
@@ -391,6 +510,19 @@ class _PintorEscaneo extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: size.width - 20);
     tp.paint(canvas, const Offset(10, 8));
+  }
+
+  void _punteado(Canvas c, Path path, Color color, double ancho) {
+    final Paint pincel = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = ancho
+      ..strokeCap = StrokeCap.round;
+    for (final PathMetric pm in path.computeMetrics()) {
+      for (double d = 0; d < pm.length; d += 12) {
+        c.drawPath(pm.extractPath(d, math.min(d + 6, pm.length)), pincel);
+      }
+    }
   }
 
   void _marca(Canvas c, Offset p, String txt, Color col, {bool abajo = false}) {
@@ -581,6 +713,14 @@ class _Datos extends StatelessWidget {
         e.puntosControlM.isEmpty
             ? '—'
             : e.puntosControlM.map((double v) => '${formato(v)} m').join(' · '),
+      ),
+      (
+        'Paredes fijas (radar)',
+        e.firmaParedesCm.isEmpty
+            ? '—'
+            : e.firmaParedesCm
+                  .map((double v) => '${v.toStringAsFixed(0)} cm')
+                  .join(' · '),
       ),
       (
         'Lecturas por segmento',

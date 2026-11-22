@@ -589,6 +589,17 @@ class TarjetaMapaPista extends StatelessWidget {
         puntosControlEquitativos(trazado.largoM);
     final Estado? estado = servicio.ultimoEstado;
     final Ultrasonido? us = servicio.ultimoUltrasonido;
+    final double? frenteActualCm = sim != null ? sim.frenteCm : us?.frenteValido;
+    final ClasificacionRadar? clasificacionRadar =
+        (activa?.metricas != null &&
+            activa!.metricas!.perfilesSeccion.isNotEmpty &&
+            frenteActualCm != null)
+        ? activa.metricas!.clasificarLecturaRadar(
+            posicionM: sim?.posicionM ?? 0.0,
+            frenteCm: frenteActualCm,
+          )
+        : null;
+    final int viajesAfinados = activa?.metricas?.viajesOperacion ?? 0;
     final bool sinSenal = estadoSinSenal(estado);
     final Estado? e = sinSenal ? null : estado;
     final ZonaSonar zona = zonaFrente(us);
@@ -645,6 +656,34 @@ class TarjetaMapaPista extends StatelessWidget {
               color: CockpitColors.onSurfaceVariant,
             ),
           ),
+          if (clasificacionRadar != null || viajesAfinados > 0) ...<Widget>[
+            const SizedBox(height: 6),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: <Widget>[
+                if (clasificacionRadar != null)
+                  StatusPill(
+                    key: const Key('mapa-clasificacion-radar'),
+                    texto: clasificacionRadar.etiqueta,
+                    color: switch (clasificacionRadar) {
+                      ClasificacionRadar.obstaculoNuevo => CockpitColors.hazard,
+                      ClasificacionRadar.paredFija => CockpitColors.primary,
+                      ClasificacionRadar.libre => CockpitColors.ok,
+                    },
+                  ),
+                if (viajesAfinados > 0)
+                  StatusPill(
+                    key: const Key('mapa-viajes-afinados'),
+                    texto:
+                        'Afinado · $viajesAfinados ${viajesAfinados == 1 ? 'viaje' : 'viajes'}',
+                    color: CockpitColors.ok,
+                    punto: false,
+                  ),
+              ],
+            ),
+          ],
           if (tecnico) ...<Widget>[
             const SizedBox(height: 12),
             _TarjetaMision(sim: sim, estado: e, zona: zona),

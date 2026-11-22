@@ -920,8 +920,8 @@ class _DialogoNuevaPistaState extends State<_DialogoNuevaPista> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Modo básico · 0 torres de control. Al crearla se '
-                        'abre el escaneo de la pista (Gemelo Digital).',
+                        'Calibración guiada por Administrador · asegura la '
+                        'pista sin obstáculos temporales antes de escanear.',
                         style: CockpitText.bodySm.copyWith(
                           color: CockpitColors.onSurfaceVariant,
                         ),

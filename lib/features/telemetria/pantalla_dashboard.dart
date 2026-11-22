@@ -155,27 +155,61 @@ class _DetalleTecnico extends StatelessWidget {
   }
 }
 
-/// Tarjeta de recorrido para pistas en **Circuito cerrado** (`torresControl == 0`):
-/// sin entregas ni destinos de laboratorio, solo la acción de completar la vuelta
-/// y regresar al inicio.
-class _TarjetaRecorrido extends StatelessWidget {
+/// Tarjeta de recorrido para pistas en **Circuito cerrado** o **Lineal** (`torresControl == 0`):
+/// sin entregas ni destinos de laboratorio, solo la acción de completar el recorrido
+/// y afinar incrementalmente el perfil calibrado de la pista.
+class _TarjetaRecorrido extends StatefulWidget {
   const _TarjetaRecorrido({required this.servicio, required this.pista});
 
   final MqttService servicio;
   final PistaLocal? pista;
 
+  @override
+  State<_TarjetaRecorrido> createState() => _TarjetaRecorridoState();
+}
+
+class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
+  bool _viajeRegistrado = false;
+
   void _iniciar(BuildContext context) {
-    final double largo = pista?.longitudM ?? largoCanonicoM;
-    if (servicio.conectado) {
-      enviarOrden(context, servicio, 'auto');
+    _viajeRegistrado = false;
+    final double largo = widget.pista?.longitudM ?? largoCanonicoM;
+    if (widget.servicio.conectado) {
+      enviarOrden(context, widget.servicio, 'auto');
     } else {
-      servicio.iniciarRecorridoCircuito(longitudM: largo);
+      widget.servicio.iniciarRecorridoCircuito(longitudM: largo);
     }
+  }
+
+  void _registrarSiCompleto(SimulacionPista? sim) {
+    final PistaLocal? pista = widget.pista;
+    if (sim == null || !sim.vueltaCompletada || pista == null) {
+      if (sim != null && sim.vueltaEnCurso) _viajeRegistrado = false;
+      return;
+    }
+    if (_viajeRegistrado) return;
+    _viajeRegistrado = true;
+    final CatalogoPistas? catalogo = context.read<CatalogoPistas?>();
+    if (catalogo == null) return;
+    final double duracion = sim.tiempoS > 0
+        ? sim.tiempoS
+        : (pista.longitudM / SimulacionPista.velocidadCrucero);
+    final double velMedia = pista.longitudM / (duracion > 0 ? duracion : 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      catalogo.registrarViajeOperacion(
+        pista.id,
+        duracionTotalS: duracion,
+        velocidadMediaMs: velMedia,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final SimulacionPista? sim = servicio.pista;
+    final SimulacionPista? sim = widget.servicio.pista;
+    final PistaLocal? pista = widget.pista;
+    _registrarSiCompleto(sim);
     final bool enCurso = sim != null && sim.vueltaEnCurso;
     final bool completado = sim != null && sim.vueltaCompletada;
     final int pct = sim == null ? 0 : (sim.progresoVuelta * 100).round();
