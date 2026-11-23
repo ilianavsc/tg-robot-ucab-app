@@ -9,57 +9,127 @@ import 'package:robot_ucab_app/core/pistas/trazado_pista.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 
 void main() {
-  group('Contrato MQTT y Pista generado (offline)', () {
-    test('source-lock.json registra el SHA y versión v2.0.0 del portafolio', () {
+  group('Contrato MQTT y Pista (v2.0.0 · offline)', () {
+    test('1. versión 2.0.0, schemaVersion y sourceCommit 9e01afd en source-lock', () {
       final Map<String, dynamic> lock =
           jsonDecode(
                 File('lib/core/contracts/source-lock.json').readAsStringSync(),
               )
               as Map<String, dynamic>;
       expect(lock['sourceRepo'], 'ilianavsc/tg-robot-ucab-portfolio');
-      expect(lock['sourceCommit'], '934490fe29b6876f7ac20a9528015a2c3961ccb1');
+      expect(lock['sourceCommit'], '9e01afdcb2db95dde5773f8096b4275112effeda');
       expect(lock['contractVersion'], '2.0.0');
       expect(lock['schemaVersion'], '2.0.0');
       expect(RobotMqttContract.version, '2.0.0');
       expect(RobotMqttContract.schemaVersion, '2.0.0');
-      expect(lock['contractVersion'], RobotMqttContract.version);
-      expect(lock['schemaVersion'], RobotMqttContract.schemaVersion);
       expect(
         RegExp(r'^[0-9a-f]{40}$').hasMatch(lock['sourceCommit'] as String),
         isTrue,
       );
     });
 
-    test('Capa 3 v2.0.0: 7 tópicos nuevos, 10+5 estados, MPU-6050 y bloqueo', () {
+    test('2. tópicos base, brokers (HiveMQ → EMQX → Mosquitto) y separación HIL vs P04', () {
+      expect(RobotMqttContract.topicoEstado, 'ucab-tg-sf/robot/estado');
+      expect(
+        RobotMqttContract.topicoUltrasonido,
+        'ucab-tg-sf/robot/ultrasonido',
+      );
+      expect(RobotMqttContract.topicoOrdenes, 'ucab-tg-sf/robot/ordenes');
+      expect(RobotMqttContract.topicoAck, 'ucab-tg-sf/robot/ordenes/ack');
+      expect(RobotMqttContract.topicoAlertas, 'ucab-tg-sf/robot/alertas');
+      expect(RobotMqttContract.topicoConexion, 'ucab-tg-sf/robot/conexion');
+      expect(RobotMqttContract.topicosMeta['conexion']!.retained, isTrue);
+      expect(RobotMqttContract.qosEstado, 0);
+      expect(RobotMqttContract.qosOrdenes, 1);
+      expect(RobotMqttContract.qosAlertas, 2);
+      expect(RobotMqttContract.ackTimeoutMs, 5000);
+      expect(RobotMqttContract.comandosValidos, <String>[
+        'adelante',
+        'atras',
+        'izquierda',
+        'derecha',
+        'frenar',
+        'auto',
+      ]);
+      for (final String campo
+          in RobotMqttContract.camposEstadoExclusivosSimuladorP04) {
+        expect(
+          RobotMqttContract.camposEstadoFisicoHIL.contains(campo),
+          isFalse,
+        );
+      }
+      expect(
+        brokers.map((BrokerEndpoint b) => b.nombre).toList(),
+        <String>['HiveMQ', 'EMQX', 'Mosquitto'],
+      );
+    });
+
+    test('3. los 7 tópicos nuevos de Capa 3/MPU-6050 con qos, retained y direccion', () {
+      expect(RobotMqttContract.topicosMeta.length, 13);
       expect(RobotMqttContract.topicosCapa3.length, 7);
-      expect(
-        RobotMqttContract.topicosCapa3['rutas_estado'],
-        'ucab-tg-sf/robot/rutas/estado',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['rutas_escaneo'],
-        'ucab-tg-sf/robot/rutas/escaneo',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['rutas_reposicionamiento'],
-        'ucab-tg-sf/robot/rutas/reposicionamiento',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['pedidos_solicitud'],
-        'ucab-tg-sf/robot/pedidos/solicitud',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['pedidos_estado'],
-        'ucab-tg-sf/robot/pedidos/estado',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['pedidos_cancelacion'],
-        'ucab-tg-sf/robot/pedidos/cancelacion',
-      );
-      expect(
-        RobotMqttContract.topicosCapa3['sensores_inercial'],
-        'ucab-tg-sf/robot/sensores/inercial',
-      );
+
+      final Map<String, ({String ruta, int qos, bool retained, String dir})>
+      esperados =
+          <String, ({String ruta, int qos, bool retained, String dir})>{
+            'rutas_estado': (
+              ruta: 'ucab-tg-sf/robot/rutas/estado',
+              qos: 1,
+              retained: true,
+              dir: 'robot->app',
+            ),
+            'rutas_escaneo': (
+              ruta: 'ucab-tg-sf/robot/rutas/escaneo',
+              qos: 1,
+              retained: false,
+              dir: 'app->robot',
+            ),
+            'rutas_reposicionamiento': (
+              ruta: 'ucab-tg-sf/robot/rutas/reposicionamiento',
+              qos: 1,
+              retained: false,
+              dir: 'app->robot',
+            ),
+            'pedidos_solicitud': (
+              ruta: 'ucab-tg-sf/robot/pedidos/solicitud',
+              qos: 1,
+              retained: false,
+              dir: 'app->robot',
+            ),
+            'pedidos_estado': (
+              ruta: 'ucab-tg-sf/robot/pedidos/estado',
+              qos: 1,
+              retained: true,
+              dir: 'robot->app',
+            ),
+            'pedidos_cancelacion': (
+              ruta: 'ucab-tg-sf/robot/pedidos/cancelacion',
+              qos: 1,
+              retained: false,
+              dir: 'app->robot',
+            ),
+            'sensores_inercial': (
+              ruta: 'ucab-tg-sf/robot/sensores/inercial',
+              qos: 0,
+              retained: false,
+              dir: 'robot->app',
+            ),
+          };
+
+      for (final MapEntry<
+            String,
+            ({String ruta, int qos, bool retained, String dir})
+          >
+          e
+          in esperados.entries) {
+        final MqttTopicMeta meta = RobotMqttContract.topicosMeta[e.key]!;
+        expect(meta.ruta, e.value.ruta, reason: e.key);
+        expect(meta.qos, e.value.qos, reason: e.key);
+        expect(meta.retained, e.value.retained, reason: e.key);
+        expect(meta.direccion, e.value.dir, reason: e.key);
+      }
+    });
+
+    test('4. enums de Capa 3 (10 rutas, 5 pedidos, 3 alertas MPU-6050 y bloqueo)', () {
       expect(RobotMqttContract.estadosRuta, <String>[
         'SIN_RUTA',
         'ESCANEO_IDA',
@@ -94,46 +164,30 @@ void main() {
         'roll',
         'acel_g',
         'alerta',
-        't',
+        'timestamp',
+        'schema_version',
       ]);
     });
 
-    test('tópicos, QoS, comandos y separación HIL vs P04 coinciden', () {
-      expect(RobotMqttContract.topicoEstado, 'ucab-tg-sf/robot/estado');
-      expect(
-        RobotMqttContract.topicoUltrasonido,
-        'ucab-tg-sf/robot/ultrasonido',
-      );
-      expect(RobotMqttContract.topicoOrdenes, 'ucab-tg-sf/robot/ordenes');
-      expect(RobotMqttContract.topicoAck, 'ucab-tg-sf/robot/ordenes/ack');
-      expect(RobotMqttContract.topicoAlertas, 'ucab-tg-sf/robot/alertas');
-      expect(RobotMqttContract.topicoConexion, 'ucab-tg-sf/robot/conexion');
-      expect(RobotMqttContract.qosEstado, 0);
-      expect(RobotMqttContract.qosOrdenes, 1);
-      expect(RobotMqttContract.qosAlertas, 2);
-      expect(RobotMqttContract.ackTimeoutMs, 5000);
-      expect(RobotMqttContract.comandosValidos, <String>[
-        'adelante',
-        'atras',
-        'izquierda',
-        'derecha',
-        'frenar',
-        'auto',
+    test('5. metadatos de trazabilidad y deduplicación para comandos/eventos Capa 3', () {
+      expect(RobotMqttContract.trazabilidadCamposObligatorios, <String>[
+        'message_id',
+        'request_id',
+        'sequence',
+        'timestamp',
+        'schema_version',
       ]);
-      for (final String campo
-          in RobotMqttContract.camposEstadoExclusivosSimuladorP04) {
-        expect(
-          RobotMqttContract.camposEstadoFisicoHIL.contains(campo),
-          isFalse,
-        );
-      }
       expect(
-        brokers.map((BrokerEndpoint b) => b.nombre).toList(),
-        <String>['HiveMQ', 'EMQX', 'Mosquitto'],
+        RobotMqttContract.trazabilidadDeduplicacion,
+        contains('message_id'),
+      );
+      expect(
+        RobotMqttContract.trazabilidadDeduplicacion,
+        contains('request_id'),
       );
     });
 
-    test('geometría de pista y tercios L/3 coinciden con fixture', () {
+    test('6. fixture pista_canonica.json (rssiLlegadaDbm sin typo y geometría)', () {
       final Map<String, dynamic> spec =
           jsonDecode(
                 File('test/fixtures/pista_canonica.json').readAsStringSync(),

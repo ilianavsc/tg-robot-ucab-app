@@ -1,7 +1,24 @@
-// GENERATED — DO NOT EDIT BY HAND.
-// Fuente de verdad: ilianavsc/tg-robot-ucab-portfolio @ 934490fe29b6876f7ac20a9528015a2c3961ccb1
-// Archivos origen: specs/mqtt/contract.json (v2.0.0), specs/pista_canonica.json
+// Sincronizado manualmente desde ilianavsc/tg-robot-ucab-portfolio @ 9e01afdcb2db95dde5773f8096b4275112effeda.
+// Fuente de verdad: specs/mqtt/contract.json (v2.0.0) y specs/pista_canonica.json.
+// Trazabilidad del SHA en lib/core/contracts/source-lock.json; validado por test/contrato_sync_test.dart.
 // Consumo 100 % offline (sin descargas por red en runtime).
+
+/// Metadatos de un tópico MQTT del contrato canónico.
+final class MqttTopicMeta {
+  const MqttTopicMeta({
+    required this.ruta,
+    required this.qos,
+    required this.retained,
+    required this.direccion,
+  });
+
+  final String ruta;
+  final int qos;
+  final bool retained;
+
+  /// Dirección del flujo: `'robot->app'` o `'app->robot'`.
+  final String direccion;
+}
 
 abstract final class RobotMqttContract {
   static const String version = '2.0.0';
@@ -39,6 +56,88 @@ abstract final class RobotMqttContract {
     'sensores_inercial': topicoSensoresInercial,
   };
 
+  /// Metadatos completos (`ruta`, `qos`, `retained`, `direccion`) de los 13 tópicos.
+  static const Map<String, MqttTopicMeta> topicosMeta = <String, MqttTopicMeta>{
+    'estado': MqttTopicMeta(
+      ruta: topicoEstado,
+      qos: 0,
+      retained: false,
+      direccion: 'robot->app',
+    ),
+    'ultrasonido': MqttTopicMeta(
+      ruta: topicoUltrasonido,
+      qos: 0,
+      retained: false,
+      direccion: 'robot->app',
+    ),
+    'ordenes': MqttTopicMeta(
+      ruta: topicoOrdenes,
+      qos: 1,
+      retained: false,
+      direccion: 'app->robot',
+    ),
+    'ack': MqttTopicMeta(
+      ruta: topicoAck,
+      qos: 1,
+      retained: false,
+      direccion: 'robot->app',
+    ),
+    'alertas': MqttTopicMeta(
+      ruta: topicoAlertas,
+      qos: 2,
+      retained: false,
+      direccion: 'robot->app',
+    ),
+    'conexion': MqttTopicMeta(
+      ruta: topicoConexion,
+      qos: 1,
+      retained: true,
+      direccion: 'robot->app',
+    ),
+    'rutas_estado': MqttTopicMeta(
+      ruta: topicoRutasEstado,
+      qos: 1,
+      retained: true,
+      direccion: 'robot->app',
+    ),
+    'rutas_escaneo': MqttTopicMeta(
+      ruta: topicoRutasEscaneo,
+      qos: 1,
+      retained: false,
+      direccion: 'app->robot',
+    ),
+    'rutas_reposicionamiento': MqttTopicMeta(
+      ruta: topicoRutasReposicionamiento,
+      qos: 1,
+      retained: false,
+      direccion: 'app->robot',
+    ),
+    'pedidos_solicitud': MqttTopicMeta(
+      ruta: topicoPedidosSolicitud,
+      qos: 1,
+      retained: false,
+      direccion: 'app->robot',
+    ),
+    'pedidos_estado': MqttTopicMeta(
+      ruta: topicoPedidosEstado,
+      qos: 1,
+      retained: true,
+      direccion: 'robot->app',
+    ),
+    'pedidos_cancelacion': MqttTopicMeta(
+      ruta: topicoPedidosCancelacion,
+      qos: 1,
+      retained: false,
+      direccion: 'app->robot',
+    ),
+    'sensores_inercial': MqttTopicMeta(
+      ruta: topicoSensoresInercial,
+      qos: 0,
+      retained: false,
+      direccion: 'robot->app',
+    ),
+  };
+
   static const int qosEstado = 0;
   static const int qosUltrasonido = 0;
   static const int qosOrdenes = 1;
@@ -53,6 +152,21 @@ abstract final class RobotMqttContract {
   static const int manualFailSafeMs = 5000;
   static const int telemetriaIntervaloMs = 1500;
   static const int keepAliveS = 15;
+
+  /// Campos obligatorios de trazabilidad y deduplicación para comandos/eventos
+  /// de Capa 3 (`rutas_*`, `pedidos_*`). No aplican a telemetría continua QoS 0
+  /// (`estado`, `ultrasonido`, `sensores_inercial`).
+  static const List<String> trazabilidadCamposObligatorios = <String>[
+    'message_id',
+    'request_id',
+    'sequence',
+    'timestamp',
+    'schema_version',
+  ];
+
+  /// Regla de deduplicación de comandos y correlación de pedidos (Capa 3).
+  static const String trazabilidadDeduplicacion =
+      'message_id + sequence monotónica por emisor; request_id correlaciona el ciclo de vida de cada pedido.';
 
   static const List<String> comandosValidos = <String>[
     'adelante',
@@ -121,7 +235,8 @@ abstract final class RobotMqttContract {
     'roll',
     'acel_g',
     'alerta',
-    't',
+    'timestamp',
+    'schema_version',
   ];
 }
 
