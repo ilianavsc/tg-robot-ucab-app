@@ -1,40 +1,33 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric, Tangent;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/mqtt/mqtt_service.dart';
 import '../../core/operacion/capa3_operacional.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../../core/pistas/trazado_pista.dart';
 import 'catalogo_pistas.dart';
 import 'escaneo_pista.dart';
 
-/// **Escaneo y Validación de Pista** (Gemelo Digital, modo básico).
+/// **Escaneo y Validación de Pista** (Gemelo Digital + Capa 3 Operacional).
 ///
-/// Se abre al crear una pista desde `+ Nueva pista`. Recorre solo, sin
-/// controles manuales ni inyección de fallos, las 3 etapas adaptadas de SIM2:
-/// Lectura lenta → Pasada normal → Viajes 1/3, 2/3 y 3/3. Al terminar marca la
-/// pista como configurada, la deja activa y vuelve al Login.
-///
-/// Es una simulación (SIL) reproducida a [velocidadReproduccion]× para que
-/// el escaneo dure unos segundos en pantalla.
+/// Comparte la única instancia de [Capa3OperacionalController] expuesta por
+/// [MqttService] con el Dashboard para que toda configuración de ruta, parada,
+/// escaneo y alerta MPU-6050 sea consistente entre pantallas.
 class PantallaEscaneoPista extends StatefulWidget {
   const PantallaEscaneoPista({
     super.key,
     required this.catalogo,
     required this.pistaId,
     this.velocidadReproduccion = 9,
-    this.volverAlTerminar = const Duration(milliseconds: 1800),
   });
 
   final CatalogoPistas catalogo;
   final String pistaId;
   final double velocidadReproduccion;
-
-  /// Espera antes de volver solo al Login cuando el escaneo termina.
-  final Duration volverAlTerminar;
 
   @override
   State<PantallaEscaneoPista> createState() => _PantallaEscaneoPistaState();
@@ -43,20 +36,21 @@ class PantallaEscaneoPista extends StatefulWidget {
 class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     with SingleTickerProviderStateMixin {
   late final EscaneoPista _escaneo;
-  late final Capa3OperacionalController _capa3;
+  late final MqttService _servicio;
   late final TextEditingController _paradaCtrl;
   late final Ticker _ticker;
-  Timer? _timerVolver;
   Duration _ultimo = Duration.zero;
   bool _guardada = false;
   bool _saliendo = false;
   String? _errorValidacionParada;
 
   PistaLocal? get _pista => widget.catalogo.porId(widget.pistaId);
+  Capa3OperacionalController get _capa3 => _servicio.capa3;
 
   @override
   void initState() {
     super.initState();
+    _servicio = context.read<MqttService>();
     final TipoGeometriaPista geom =
         _pista?.geometria ?? TipoGeometriaPista.circuitoCerrado;
     final double largo = _pista?.longitudM ?? 9.0;
@@ -66,15 +60,14 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
       geometria: geom,
     );
     final bool esLineal = geom == TipoGeometriaPista.lineal;
-    _paradaCtrl = TextEditingController(text: esLineal ? 'Estación 1' : '');
-    _capa3 = Capa3OperacionalController(
-      tipoRuta: esLineal
-          ? TipoRutaOperacional.lineal
-          : TipoRutaOperacional.cerrada,
-      largoM: largo,
-      paradaConfigurada: esLineal,
-      paradaNombre: esLineal ? 'Estación 1' : '',
+    final String paradaInicial = esLineal ? 'Estación 1' : '';
+    _paradaCtrl = TextEditingController(text: paradaInicial);
+    // Inicializa sobre la única instancia compartida en MqttService.
+    _capa3.setLargoM(largo);
+    _capa3.setTipoRuta(
+      esLineal ? TipoRutaOperacional.lineal : TipoRutaOperacional.cerrada,
     );
+    _capa3.configurarParada(paradaInicial);
     _capa3.iniciarEscaneo();
     _ticker = createTicker(_tick)..start();
   }
@@ -85,7 +78,18 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     if (dt <= 0 || _escaneo.completado) return;
     final double dtClamped = math.min(dt, 0.25);
     setState(() {
+      // Reloj de Capa 3: cinemática real (0,41 m/s -> 21,95 s) acelerada
+      // únicamente por el selector 1x / 2x / 4x (jamás por timeout).
       _capa3.avanzarReloj(dtClamped);
+      if (_capa3.tipoRuta == TipoRutaOperacional.lineal &&
+          _capa3.estadoRuta == EstadoRutaOperacional.escaneoIda &&
+          _capa3.progresoPasadaM >= _capa3.largoM) {
+        _servicio.completarPasadaIdaCapa3();
+      } else if (_capa3.estadoRuta == EstadoRutaOperacional.escaneoRetorno &&
+          _capa3.progresoPasadaM >= _capa3.largoM) {
+        _servicio.completarPasadaRetornoCapa3();
+      }
+      // En ESPERA_REPOSICION no hay avance automático por temporizador.
       if (_capa3.estadoRuta != EstadoRutaOperacional.esperaReposicion) {
         _escaneo.avanzar(
           dtClamped * widget.velocidadReproduccion * _capa3.escalaReloj,
@@ -97,21 +101,21 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
 
   void _cambiarTipoRuta(TipoRutaOperacional tipo) {
     setState(() {
-      _capa3.setTipoRuta(tipo);
-      _capa3.configurarParada(_paradaCtrl.text);
+      _servicio.configurarTipoRutaCapa3(tipo);
+      _servicio.configurarParadaCapa3(_paradaCtrl.text);
       if (tipo == TipoRutaOperacional.lineal && !_capa3.paradaConfigurada) {
         _errorValidacionParada =
             'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
       } else {
         _errorValidacionParada = null;
-        _capa3.iniciarEscaneo();
+        _servicio.iniciarEscaneoCapa3();
       }
     });
   }
 
   void _actualizarParada(String valor) {
     setState(() {
-      final bool ok = _capa3.configurarParada(valor);
+      final bool ok = _servicio.configurarParadaCapa3(valor);
       if (_capa3.tipoRuta == TipoRutaOperacional.lineal && !ok) {
         _errorValidacionParada =
             'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
@@ -124,32 +128,36 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
   void _simularFinPasadaIda() {
     setState(() {
       if (_capa3.estadoRuta == EstadoRutaOperacional.sinRuta) {
-        final ResultadoCapa3 r = _capa3.iniciarEscaneo();
+        final ResultadoCapa3 r = _servicio.iniciarEscaneoCapa3();
         if (!r.ok) {
           _errorValidacionParada =
               'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
           return;
         }
       }
-      _capa3.completarPasadaIda();
+      _servicio.completarPasadaIdaCapa3();
     });
   }
 
   void _confirmarReposicionamiento() {
     setState(() {
-      _capa3.confirmarReposicionamiento();
+      _servicio.confirmarReposicionamientoCapa3();
     });
   }
 
   void _terminar() {
     if (_guardada) return;
+    if (_capa3.estadoRuta == EstadoRutaOperacional.escaneoIda &&
+        _capa3.tipoRuta == TipoRutaOperacional.cerrada) {
+      _servicio.completarPasadaIdaCapa3();
+    } else if (_capa3.estadoRuta == EstadoRutaOperacional.escaneoRetorno) {
+      _servicio.completarPasadaRetornoCapa3();
+    }
     _guardada = widget.catalogo.completarEscaneo(
       widget.pistaId,
       _escaneo.metricas!,
     );
     _ticker.stop();
-    _timerVolver?.cancel();
-    _timerVolver = Timer(widget.volverAlTerminar, _volver);
   }
 
   void _volver() {
@@ -160,8 +168,6 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
 
   @override
   void dispose() {
-    _timerVolver?.cancel();
-    _timerVolver = null;
     _ticker.stop(canceled: true);
     _ticker.dispose();
     _paradaCtrl.dispose();
@@ -217,7 +223,7 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
                     onTipoRuta: _cambiarTipoRuta,
                     onParadaChanged: _actualizarParada,
                     onEscalaReloj: (int f) =>
-                        setState(() => _capa3.setEscalaReloj(f)),
+                        setState(() => _servicio.setEscalaRelojCapa3(f)),
                     onMarcarFinIda: _simularFinPasadaIda,
                     onConfirmarReposicion: _confirmarReposicionamiento,
                   ),

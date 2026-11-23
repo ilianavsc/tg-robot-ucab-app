@@ -263,6 +263,8 @@ void main() {
 
   group('Capa 3 — UI (PantallaEscaneoPista y PantallaDashboard)', () {
     testWidgets('PantallaEscaneoPista valida parada lineal, reloj 1x/2x/4x y confirmación manual de reposicionamiento', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
       final CatalogoPistas catalogo = CatalogoPistas();
       final PistaLocal p = catalogo.agregarPista(
         nombre: 'Pista QA',
@@ -271,12 +273,15 @@ void main() {
       )!;
 
       await tester.pumpWidget(
-        MaterialApp(
-          theme: buildCockpitTheme(),
-          home: PantallaEscaneoPista(
-            catalogo: catalogo,
-            pistaId: p.id,
-            velocidadReproduccion: 1,
+        ChangeNotifierProvider<MqttService>.value(
+          value: svc,
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: PantallaEscaneoPista(
+              catalogo: catalogo,
+              pistaId: p.id,
+              velocidadReproduccion: 1,
+            ),
           ),
         ),
       );
@@ -386,6 +391,140 @@ void main() {
       await tester.pump();
       expect(find.byKey(const Key('capa3-banner-mpu')), findsNothing);
       svc.detenerSimulacion();
+    });
+
+    testWidgets('Integración 1 (un solo cerebro): completar escaneo con parada en PantallaEscaneoPista habilita Solicitar pedido en PantallaDashboard', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+      final CatalogoPistas catalogo = CatalogoPistas();
+      final PistaLocal p = catalogo.agregarPista(
+        nombre: 'Pista Unificada',
+        longitudM: 9.0,
+        geometria: TipoGeometriaPista.circuitoCerrado,
+      )!;
+
+      // 1. Abrir PantallaEscaneoPista compartiendo svc
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<MqttService>.value(value: svc),
+            ChangeNotifierProvider<CatalogoPistas>.value(value: catalogo),
+          ],
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: PantallaEscaneoPista(
+              catalogo: catalogo,
+              pistaId: p.id,
+              velocidadReproduccion: 25,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Configurar parada en la pantalla de escaneo (muta el único svc.capa3)
+      await tester.enterText(
+        find.byKey(const Key('escaneo-parada-input')),
+        'Estación Lab 1',
+      );
+      await tester.pump();
+      expect(svc.capa3.paradaConfigurada, isTrue);
+      expect(svc.capa3.puedeSolicitarPedido, isFalse);
+
+      // Avanzar hasta completar el escaneo
+      for (int i = 0; i < 120; i++) {
+        if (find.byKey(const Key('escaneo-listo')).evaluate().isNotEmpty) {
+          break;
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byKey(const Key('escaneo-listo')), findsOneWidget);
+      // Confirmar que NO desaparece solo tras 3 s (timeout de 1,8 s eliminado)
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.byKey(const Key('escaneo-listo')), findsOneWidget);
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.operacionConParada);
+      expect(svc.capa3.puedeSolicitarPedido, isTrue);
+
+      // 2. Montar PantallaDashboard con la MISMA instancia svc
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<MqttService>.value(value: svc),
+            ChangeNotifierProvider<SolicitudActiva>(
+              create: (_) => SolicitudActiva(),
+            ),
+            ChangeNotifierProvider<CatalogoPistas>.value(value: catalogo),
+          ],
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: const Scaffold(body: PantallaDashboard(tecnico: false)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('capa3-solicitar-pedido')),
+        200,
+      );
+      final FilledButton btn = tester.widget<FilledButton>(
+        find.byKey(const Key('capa3-solicitar-pedido')),
+      );
+      expect(btn.onPressed, isNotNull);
+      await tester.tap(find.byKey(const Key('capa3-solicitar-pedido')));
+      await tester.pump();
+      expect(svc.capa3.estadoPedido, EstadoPedidoOperacional.solicitado);
+    });
+
+    testWidgets('Integración 2 (Ruta Lineal): ESPERA_REPOSICION permanece bloqueado tras avanzar reloj virtual hasta confirmación manual', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+      final CatalogoPistas catalogo = CatalogoPistas();
+      final PistaLocal p = catalogo.agregarPista(
+        nombre: 'Pista Lineal QA',
+        longitudM: 9.0,
+        geometria: TipoGeometriaPista.lineal,
+      )!;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<MqttService>.value(
+          value: svc,
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: PantallaEscaneoPista(
+              catalogo: catalogo,
+              pistaId: p.id,
+              velocidadReproduccion: 1,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(svc.capa3.tipoRuta, TipoRutaOperacional.lineal);
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.escaneoIda);
+
+      // Llevar a ESPERA_REPOSICION al terminar la ida
+      await tester.tap(find.byKey(const Key('escaneo-fin-ida')));
+      await tester.pump();
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.esperaReposicion);
+      expect(svc.capa3.puedeMover, isFalse);
+
+      // Avanzar el reloj virtual 10 minutos (sin ningún auto-retorno ni timeout)
+      for (int i = 0; i < 10; i++) {
+        await tester.pump(const Duration(seconds: 60));
+      }
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.esperaReposicion);
+      expect(svc.capa3.puedeMover, isFalse);
+      expect(
+        find.byKey(const Key('escaneo-confirmar-reposicion')),
+        findsOneWidget,
+      );
+
+      // Solo la confirmación manual del usuario desbloquea ESCANEO_RETORNO
+      await tester.tap(find.byKey(const Key('escaneo-confirmar-reposicion')));
+      await tester.pump();
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.escaneoRetorno);
+      expect(svc.capa3.puedeMover, isTrue);
     });
   });
 }

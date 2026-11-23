@@ -521,10 +521,9 @@ void main() {
         expect(find.text('CONFIGURADA'), findsOneWidget);
         expect(find.text('3/3'), findsOneWidget);
         expect(find.text('3/3 · 3/3 · 3/3 (9/9)'), findsOneWidget);
-        // vuelve solo al Login
-        await t.pump(const Duration(seconds: 2));
-        await t.pump();
-        await t.pump(const Duration(milliseconds: 600));
+        // sin auto-avance por temporizador: el usuario confirma el regreso
+        await _tocar(t, find.byKey(const Key('escaneo-listo')));
+        await t.pumpAndSettle();
         expect(find.byKey(const Key('escaneo-lienzo')), findsNothing);
         expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
         expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
