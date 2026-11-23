@@ -164,6 +164,8 @@ class Capa3OperacionalController {
 
   static const double velLentaMs = 0.16;
   static const double velNormalMs = 0.41;
+  static const double largoCanonicoM = RobotTrackContract.longitudCanonicaM;
+  static const double rampaDecelMs2 = 0.55;
   static const int usosParaParada = 3;
   static const List<int> escalasReloj = <int>[1, 2, 4];
 

@@ -1,4 +1,4 @@
-// Sincronizado manualmente desde ilianavsc/tg-robot-ucab-portfolio @ 9e01afdcb2db95dde5773f8096b4275112effeda.
+// Sincronizado manualmente desde ilianavsc/tg-robot-ucab-portfolio @ e505cfda4b1eef84aba2a1d00b50015a2a5d3967.
 // Fuente de verdad: specs/mqtt/contract.json (v2.0.0) y specs/pista_canonica.json.
 // Trazabilidad del SHA en lib/core/contracts/source-lock.json; validado por test/contrato_sync_test.dart.
 // Consumo 100 % offline (sin descargas por red en runtime).
@@ -152,6 +152,12 @@ abstract final class RobotMqttContract {
   static const int manualFailSafeMs = 5000;
   static const int telemetriaIntervaloMs = 1500;
   static const int keepAliveS = 15;
+
+  /// Patrones de tópicos a los que aplica la trazabilidad Capa 3 (excluye QoS 0 continuo).
+  static const List<String> trazabilidadAplicaA = <String>[
+    'rutas_*',
+    'pedidos_*',
+  ];
 
   /// Campos obligatorios de trazabilidad y deduplicación para comandos/eventos
   /// de Capa 3 (`rutas_*`, `pedidos_*`). No aplican a telemetría continua QoS 0

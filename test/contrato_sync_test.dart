@@ -5,19 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:robot_ucab_app/core/config/brokers.dart';
 import 'package:robot_ucab_app/core/contracts/generated/robot_contract.dart';
+import 'package:robot_ucab_app/core/operacion/capa3_operacional.dart';
 import 'package:robot_ucab_app/core/pistas/trazado_pista.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 
 void main() {
   group('Contrato MQTT y Pista (v2.0.0 · offline)', () {
-    test('1. versión 2.0.0, schemaVersion y sourceCommit 9e01afd en source-lock', () {
+    test('1. versión 2.0.0, schemaVersion y sourceCommit e505cfd en source-lock', () {
       final Map<String, dynamic> lock =
           jsonDecode(
                 File('lib/core/contracts/source-lock.json').readAsStringSync(),
               )
               as Map<String, dynamic>;
       expect(lock['sourceRepo'], 'ilianavsc/tg-robot-ucab-portfolio');
-      expect(lock['sourceCommit'], '9e01afdcb2db95dde5773f8096b4275112effeda');
+      expect(lock['sourceCommit'], 'e505cfda4b1eef84aba2a1d00b50015a2a5d3967');
       expect(lock['contractVersion'], '2.0.0');
       expect(lock['schemaVersion'], '2.0.0');
       expect(RobotMqttContract.version, '2.0.0');
@@ -260,6 +261,44 @@ void main() {
       expect(
         List<String>.from(capa3['alertasMpu6050'] as List<dynamic>),
         RobotMqttContract.alertasMpu6050,
+      );
+
+      final Map<String, dynamic> trazabilidad =
+          contract['trazabilidad'] as Map<String, dynamic>;
+      expect(
+        List<String>.from(trazabilidad['aplicaA'] as List<dynamic>),
+        RobotMqttContract.trazabilidadAplicaA,
+      );
+      expect(RobotMqttContract.trazabilidadAplicaA, <String>[
+        'rutas_*',
+        'pedidos_*',
+      ]);
+
+      final Map<String, dynamic> constantes =
+          capa3['constantes'] as Map<String, dynamic>;
+      expect(
+        (constantes['VEL_NORMAL_MS'] as num).toDouble(),
+        Capa3OperacionalController.velNormalMs,
+      );
+      expect(
+        (constantes['VEL_LENTA_MS'] as num).toDouble(),
+        Capa3OperacionalController.velLentaMs,
+      );
+      expect(
+        (constantes['LARGO_CANONICO_M'] as num).toDouble(),
+        Capa3OperacionalController.largoCanonicoM,
+      );
+      expect(
+        (constantes['RAMPA_DECEL_MS2'] as num).toDouble(),
+        Capa3OperacionalController.rampaDecelMs2,
+      );
+      expect(
+        constantes['USOS_PARA_PARADA'],
+        Capa3OperacionalController.usosParaParada,
+      );
+      expect(
+        List<int>.from(constantes['ESCALAS_RELOJ'] as List<dynamic>),
+        Capa3OperacionalController.escalasReloj,
       );
     });
   });
