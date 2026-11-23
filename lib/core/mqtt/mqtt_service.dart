@@ -9,10 +9,12 @@ import 'package:uuid/uuid.dart';
 import '../alertas/centro_alertas.dart';
 import '../analitica/analitica_sesion.dart';
 import '../config/brokers.dart';
+import '../contracts/generated/robot_contract.dart';
 import '../demo/simulacion_pista.dart';
 import '../models/estado.dart';
 import '../models/orden_ack.dart';
 import '../models/ultrasonido.dart';
+import '../operacion/capa3_operacional.dart';
 import '../pistas/trazado_pista.dart';
 import 'mqtt_client_platform_stub.dart'
     if (dart.library.io) 'mqtt_client_platform_io.dart'
@@ -38,11 +40,19 @@ enum EstadoConexion { desconectado, conectando, conectado, error }
 /// Limitación conocida: TCP plano 1883 en nativo; WebSocket `wss` en web.
 class MqttService extends ChangeNotifier {
   MqttService({
-    this.topicoEstado = 'ucab-tg-sf/robot/estado',
-    this.topicoOrdenes = 'ucab-tg-sf/robot/ordenes',
-    this.topicoAck = 'ucab-tg-sf/robot/ordenes/ack',
-    this.topicoUltrasonido = 'ucab-tg-sf/robot/ultrasonido',
-    this.topicoAlertas = 'ucab-tg-sf/robot/alertas',
+    this.topicoEstado = RobotMqttContract.topicoEstado,
+    this.topicoOrdenes = RobotMqttContract.topicoOrdenes,
+    this.topicoAck = RobotMqttContract.topicoAck,
+    this.topicoUltrasonido = RobotMqttContract.topicoUltrasonido,
+    this.topicoAlertas = RobotMqttContract.topicoAlertas,
+    this.topicoRutasEstado = RobotMqttContract.topicoRutasEstado,
+    this.topicoRutasEscaneo = RobotMqttContract.topicoRutasEscaneo,
+    this.topicoRutasReposicionamiento =
+        RobotMqttContract.topicoRutasReposicionamiento,
+    this.topicoPedidosSolicitud = RobotMqttContract.topicoPedidosSolicitud,
+    this.topicoPedidosCancelacion = RobotMqttContract.topicoPedidosCancelacion,
+    this.topicoPedidosEstado = RobotMqttContract.topicoPedidosEstado,
+    this.topicoSensoresInercial = RobotMqttContract.topicoSensoresInercial,
   });
 
   /// Tópico de telemetría del robot (QoS 0, cada 2 s).
@@ -57,8 +67,21 @@ class MqttService extends ChangeNotifier {
   /// Tópico de los 2 sensores ultrasónicos: `frente_cm` y `atras_cm` (QoS 0).
   final String topicoUltrasonido;
 
-  /// Tópico de alertas del robot (QoS 2): `{"n","tipo","prueba","valor","t"}`.
+  /// Tópico de alertas del robot (QoS 2): `{"n","tipo","prueba","valor","t"}`
+  /// y alertas críticas MPU-6050 (`impacto|inclinacion|atascamiento`).
   final String topicoAlertas;
+
+  /// Tópicos de Capa 3 Operacional y seguridad inercial MPU-6050 (`v2.0.0`).
+  final String topicoRutasEstado;
+  final String topicoRutasEscaneo;
+  final String topicoRutasReposicionamiento;
+  final String topicoPedidosSolicitud;
+  final String topicoPedidosCancelacion;
+  final String topicoPedidosEstado;
+  final String topicoSensoresInercial;
+
+  /// Controlador ortogonal de Capa 3 (Rutas + Pedidos + MPU-6050).
+  final Capa3OperacionalController capa3 = Capa3OperacionalController();
 
   /// Centro de Alertas (P11): alertas activas y registro reciente.
   final CentroAlertas centroAlertas = CentroAlertas();
@@ -113,7 +136,20 @@ class MqttService extends ChangeNotifier {
   String? _ultimaOrdenId;
   String? _ultimoComando;
 
+  int _capa3Sequence = 0;
+  String? _ultimoTopicoCapa3;
+  Map<String, dynamic>? _ultimoPayloadCapa3;
+
   // ------------------------------------------------------------- getters
+
+  /// Último tópico de Capa 3 publicado (útil para diagnóstico y pruebas).
+  String? get ultimoTopicoCapa3 => _ultimoTopicoCapa3;
+
+  /// Último sobre JSON de Capa 3 con trazabilidad (`message_id`, `sequence`, ...).
+  Map<String, dynamic>? get ultimoPayloadCapa3 => _ultimoPayloadCapa3;
+
+  /// Secuencia monótona actual de comandos/eventos Capa 3.
+  int get secuenciaCapa3 => _capa3Sequence;
 
   EstadoConexion get conexion => _conexion;
 
@@ -213,6 +249,9 @@ class MqttService extends ChangeNotifier {
       cliente.subscribe(topicoAck, MqttQos.atLeastOnce);
       cliente.subscribe(topicoUltrasonido, MqttQos.atMostOnce);
       cliente.subscribe(topicoAlertas, MqttQos.exactlyOnce);
+      cliente.subscribe(topicoRutasEstado, MqttQos.atLeastOnce);
+      cliente.subscribe(topicoPedidosEstado, MqttQos.atLeastOnce);
+      cliente.subscribe(topicoSensoresInercial, MqttQos.atMostOnce);
       // El stream `updates` se crea dentro de connect(): hay que escucharlo
       // aquí y no en el constructor, donde todavía es null. En cada conexión
       // el gestor de suscripciones es nuevo, así que se cancela el anterior.
@@ -250,6 +289,12 @@ class MqttService extends ChangeNotifier {
   /// En Modo Demo no usa la red: simula la confirmación a los 300 ms.
   bool publicarOrden(String comando) {
     if (_descartado) return false;
+    if (comando != 'frenar' && !capa3.puedeMover) {
+      _ultimoError =
+          'Orden "$comando" bloqueada en estado ${capa3.estadoRuta.clave}.';
+      notifyListeners();
+      return false;
+    }
     final id = const Uuid().v4();
     final json = jsonEncode(<String, String>{'id': id, 'cmd': comando});
 
@@ -286,6 +331,238 @@ class MqttService extends ChangeNotifier {
     }
     _guardarOrden(id, comando);
     return true;
+  }
+
+  // --------------------------------------------------- Capa 3 Operacional
+
+  /// Construye y publica (si hay enlace activo) un sobre de Capa 3 con
+  /// trazabilidad obligatoria: `message_id`, `request_id` (si aplica),
+  /// `sequence` monótono, `timestamp` y `schema_version` (`2.0.0`).
+  Map<String, dynamic> _publicarCapa3(
+    String topico,
+    Map<String, dynamic> cuerpo, {
+    MqttQos qos = MqttQos.atLeastOnce,
+    String? requestId,
+  }) {
+    final Map<String, dynamic> payload = <String, dynamic>{
+      ...cuerpo,
+      'message_id': const Uuid().v4(),
+      if (requestId != null) 'request_id': requestId,
+      'sequence': ++_capa3Sequence,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'schema_version': RobotMqttContract.schemaVersion,
+    };
+    _ultimoTopicoCapa3 = topico;
+    _ultimoPayloadCapa3 = Map<String, dynamic>.unmodifiable(payload);
+
+    final cliente = _cliente;
+    if (!_simulando &&
+        cliente != null &&
+        cliente.connectionStatus?.state == MqttConnectionState.connected) {
+      try {
+        final contenido = MqttClientPayloadBuilder()
+          ..addString(jsonEncode(payload));
+        cliente.publishMessage(topico, qos, contenido.payload!);
+      } catch (e) {
+        _ultimoError = 'No se publicó en $topico: $e';
+      }
+    }
+    return payload;
+  }
+
+  void configurarTipoRutaCapa3(TipoRutaOperacional tipo) {
+    if (_descartado) return;
+    capa3.setTipoRuta(tipo);
+    notifyListeners();
+  }
+
+  bool configurarParadaCapa3(String nombre) {
+    if (_descartado) return false;
+    final bool ok = capa3.configurarParada(nombre);
+    notifyListeners();
+    return ok;
+  }
+
+  void setEscalaRelojCapa3(int factor) {
+    if (_descartado) return;
+    capa3.setEscalaReloj(factor);
+    notifyListeners();
+  }
+
+  ResultadoCapa3 iniciarEscaneoCapa3() {
+    final ResultadoCapa3 r = capa3.iniciarEscaneo();
+    if (r.ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'iniciar_escaneo',
+        'tipo_ruta': capa3.tipoRuta.clave,
+        'parada_configurada': capa3.paradaConfigurada,
+        'parada_nombre': capa3.paradaNombre,
+      });
+    }
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 completarPasadaIdaCapa3() {
+    final ResultadoCapa3 r = capa3.completarPasadaIda();
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 confirmarReposicionamientoCapa3() {
+    final ResultadoCapa3 r = capa3.confirmarReposicionamiento();
+    if (r.ok) {
+      _publicarCapa3(topicoRutasReposicionamiento, <String, dynamic>{
+        'accion': 'confirmar_reposicionamiento',
+        'tipo_ruta': capa3.tipoRuta.clave,
+      });
+    }
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 completarPasadaRetornoCapa3() {
+    final ResultadoCapa3 r = capa3.completarPasadaRetorno();
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  int registrarUsoCapa3({required bool exitoso}) {
+    final int usos = capa3.registrarUsoCompletado(exitoso: exitoso);
+    if (!_descartado) notifyListeners();
+    return usos;
+  }
+
+  ResultadoCapa3 iniciarReescaneoParadaCapa3(String nombreParada) {
+    final ResultadoCapa3 r = capa3.iniciarReescaneoParada(nombreParada);
+    if (r.ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'reescanear_parada',
+        'parada_nombre': capa3.paradaNombre,
+      });
+    }
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 completarReescaneoParadaCapa3() {
+    final ResultadoCapa3 r = capa3.completarReescaneoParada();
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 solicitarPedidoCapa3({
+    String? paradaId,
+    bool conCarga = true,
+    String componente = 'Kit de laboratorio',
+  }) {
+    final String reqId = const Uuid().v4();
+    final ResultadoCapa3 r = capa3.solicitarPedido(
+      paradaId: paradaId ?? capa3.paradaNombre,
+      conCarga: conCarga,
+      componente: componente,
+      requestId: reqId,
+    );
+    if (r.ok) {
+      _publicarCapa3(
+        topicoPedidosSolicitud,
+        <String, dynamic>{
+          'parada_id': capa3.pedidoActivo?.paradaId ?? capa3.paradaNombre,
+          'con_carga': conCarga,
+          'componente': componente,
+        },
+        requestId: reqId,
+      );
+      if (_simulando) {
+        capa3.despacharPedido();
+        _pista?.aplicarOrden('auto');
+      }
+    }
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  ResultadoCapa3 cancelarPedidoSeguroCapa3({
+    String motivo = 'cancelado_usuario',
+  }) {
+    final String reqId = capa3.pedidoActivo?.requestId ?? const Uuid().v4();
+    final ResultadoCapa3 r = capa3.cancelarPedidoSeguro(motivo: motivo);
+    if (r.ok) {
+      _publicarCapa3(
+        topicoPedidosCancelacion,
+        <String, dynamic>{'motivo': motivo},
+        requestId: reqId,
+      );
+      if (_simulando) {
+        _pista?.aplicarOrden('frenar');
+      }
+    }
+    if (!_descartado) notifyListeners();
+    return r;
+  }
+
+  bool confirmarDetencionCancelacionCapa3() {
+    final bool ok = capa3.confirmarDetencionCancelacion();
+    if (!_descartado) notifyListeners();
+    return ok;
+  }
+
+  bool completarEntregaCapa3() {
+    final bool ok = capa3.completarEntregaPedido();
+    if (ok && _simulando) {
+      _pista?.aplicarOrden('frenar');
+    }
+    if (!_descartado) notifyListeners();
+    return ok;
+  }
+
+  bool cerrarEntregaCapa3() {
+    final bool ok = capa3.cerrarEntregaPedido();
+    if (!_descartado) notifyListeners();
+    return ok;
+  }
+
+  void dispararAlertaMpuDemo(AlertaMpu6050 tipo) {
+    if (_descartado) return;
+    capa3.dispararAlertaMpu6050(tipo);
+    if (_simulando) {
+      _pista?.aplicarOrden('frenar');
+    }
+    analitica.registrarAlerta();
+    final String? clave = centroAlertas.registrarDelRobot(<String, dynamic>{
+      'tipo': tipo.clave,
+      'valor': tipo == AlertaMpu6050.impacto
+          ? 2.8
+          : (tipo == AlertaMpu6050.inclinacion ? 32.0 : 0.0),
+      't': _tDemo,
+    });
+    if (clave != null) _contarParadas(<String>[clave]);
+    notifyListeners();
+  }
+
+  bool iniciarRecuperacionManualCapa3() {
+    final bool ok = capa3.iniciarRecuperacionManual();
+    if (ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'recuperacion_manual',
+      });
+    }
+    if (!_descartado) notifyListeners();
+    return ok;
+  }
+
+  bool completarRecuperacionManualCapa3({bool resetearRuta = false}) {
+    final bool ok = capa3.completarRecuperacionManual(
+      resetearRuta: resetearRuta,
+    );
+    if (ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'reanudar_operacion',
+        'resetear_ruta': resetearRuta,
+      });
+    }
+    if (!_descartado) notifyListeners();
+    return ok;
   }
 
   /// Cambia el broker seleccionado (HiveMQ, EMQX o Mosquitto) cuando no hay una
@@ -368,6 +645,18 @@ class MqttService extends ChangeNotifier {
     centroAlertas.reiniciar();
     _simulando = true;
     _pista = SimulacionPista(longitudM: longitudM);
+    capa3.setLargoM(longitudM);
+    if (capa3.estadoRuta == EstadoRutaOperacional.sinRuta) {
+      // Modo Demo arranca en ruta cerrada sin parada o lista para operar;
+      // se deja la ruta canónica aprendida con Parada 1 para habilitar pedidos
+      // y cancelación segura de inmediato sin bloquear el control manual.
+      capa3.setTipoRuta(TipoRutaOperacional.lineal);
+      capa3.configurarParada('PC3 / Estación 1');
+      capa3.iniciarEscaneo();
+      capa3.completarPasadaIda();
+      capa3.confirmarReposicionamiento();
+      capa3.completarPasadaRetorno();
+    }
     _ticksDemo = 0;
     _publicadosDemo = 0;
     _ordenesDemo = 0;
@@ -541,7 +830,10 @@ class MqttService extends ChangeNotifier {
       if (evento.topic != topicoEstado &&
           evento.topic != topicoAck &&
           evento.topic != topicoUltrasonido &&
-          evento.topic != topicoAlertas) {
+          evento.topic != topicoAlertas &&
+          evento.topic != topicoRutasEstado &&
+          evento.topic != topicoPedidosEstado &&
+          evento.topic != topicoSensoresInercial) {
         continue;
       }
       if (evento.payload is! MqttPublishMessage) continue;
@@ -554,6 +846,12 @@ class MqttService extends ChangeNotifier {
         _decodificarUltrasonido(texto);
       } else if (evento.topic == topicoAlertas) {
         _decodificarAlerta(texto);
+      } else if (evento.topic == topicoRutasEstado) {
+        _decodificarRutasEstado(texto);
+      } else if (evento.topic == topicoPedidosEstado) {
+        _decodificarPedidosEstado(texto);
+      } else if (evento.topic == topicoSensoresInercial) {
+        _decodificarSensoresInercial(texto);
       } else {
         _decodificarAck(texto);
       }
@@ -645,7 +943,12 @@ class MqttService extends ChangeNotifier {
   void _actualizarDemo(double dt) {
     final p = _pista;
     if (_descartado || !_simulando || p == null) return;
-    if (dt > 0) p.avanzar(dt);
+    if (dt > 0) {
+      capa3.avanzarReloj(dt);
+      if (capa3.puedeMover) {
+        p.avanzar(dt);
+      }
+    }
     _tDemo += (dt * 1000).round();
     final ahora = DateTime.now();
     _ultimoEstado = p.estado(
@@ -692,11 +995,67 @@ class MqttService extends ChangeNotifier {
       analitica.registrarAlerta();
       final clave = centroAlertas.registrarDelRobot(mapa);
       if (clave != null) _contarParadas(<String>[clave]);
+      capa3.procesarAlertaMpuJson(mapa);
     } catch (e) {
       _ultimoError = 'JSON inválido en $topicoAlertas: $e';
     }
     if (!_descartado) notifyListeners();
   }
+
+  /// Decodifica `rutas/estado` (QoS 1, retained), descartando obsoletos por `timestamp`.
+  void _decodificarRutasEstado(String texto) {
+    try {
+      final mapa = jsonDecode(texto);
+      if (mapa is! Map<String, dynamic>) {
+        throw const FormatException('el payload no es un objeto JSON');
+      }
+      capa3.procesarRutasEstadoJson(mapa);
+    } catch (e) {
+      _ultimoError = 'JSON inválido en $topicoRutasEstado: $e';
+    }
+    if (!_descartado) notifyListeners();
+  }
+
+  /// Decodifica `pedidos/estado` (QoS 1, retained), descartando obsoletos por `timestamp`.
+  void _decodificarPedidosEstado(String texto) {
+    try {
+      final mapa = jsonDecode(texto);
+      if (mapa is! Map<String, dynamic>) {
+        throw const FormatException('el payload no es un objeto JSON');
+      }
+      capa3.procesarPedidosEstadoJson(mapa);
+    } catch (e) {
+      _ultimoError = 'JSON inválido en $topicoPedidosEstado: $e';
+    }
+    if (!_descartado) notifyListeners();
+  }
+
+  /// Decodifica telemetría continua QoS 0 de `sensores/inercial` (MPU-6050).
+  void _decodificarSensoresInercial(String texto) {
+    try {
+      final mapa = jsonDecode(texto);
+      if (mapa is! Map<String, dynamic>) {
+        throw const FormatException('el payload no es un objeto JSON');
+      }
+      capa3.procesarSensoresInercialJson(mapa);
+    } catch (e) {
+      _ultimoError = 'JSON inválido en $topicoSensoresInercial: $e';
+    }
+    if (!_descartado) notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugProcesarRutasEstado(String json) => _decodificarRutasEstado(json);
+
+  @visibleForTesting
+  void debugProcesarPedidosEstado(String json) => _decodificarPedidosEstado(json);
+
+  @visibleForTesting
+  void debugProcesarSensoresInercial(String json) =>
+      _decodificarSensoresInercial(json);
+
+  @visibleForTesting
+  void debugProcesarAlertaMpu(String json) => _decodificarAlerta(json);
 
   /// Guarda las últimas distancias de los ultrasónicos. No toca el Modo Demo
   /// ni el estado general: es un tópico aparte.

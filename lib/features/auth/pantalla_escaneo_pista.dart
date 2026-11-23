@@ -4,6 +4,7 @@ import 'dart:ui' show PathMetric, Tangent;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../core/operacion/capa3_operacional.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../../core/pistas/trazado_pista.dart';
 import 'catalogo_pistas.dart';
@@ -41,21 +42,38 @@ class PantallaEscaneoPista extends StatefulWidget {
 class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     with SingleTickerProviderStateMixin {
   late final EscaneoPista _escaneo;
+  late final Capa3OperacionalController _capa3;
+  late final TextEditingController _paradaCtrl;
   late final Ticker _ticker;
   Duration _ultimo = Duration.zero;
   bool _guardada = false;
   bool _saliendo = false;
+  String? _errorValidacionParada;
 
   PistaLocal? get _pista => widget.catalogo.porId(widget.pistaId);
 
   @override
   void initState() {
     super.initState();
+    final TipoGeometriaPista geom =
+        _pista?.geometria ?? TipoGeometriaPista.circuitoCerrado;
+    final double largo = _pista?.longitudM ?? 9.0;
     _escaneo = EscaneoPista(
       pistaId: widget.pistaId,
-      largoEstimadoM: _pista?.longitudM ?? 9.0,
-      geometria: _pista?.geometria ?? TipoGeometriaPista.circuitoCerrado,
+      largoEstimadoM: largo,
+      geometria: geom,
     );
+    final bool esLineal = geom == TipoGeometriaPista.lineal;
+    _paradaCtrl = TextEditingController(text: esLineal ? 'Estación 1' : '');
+    _capa3 = Capa3OperacionalController(
+      tipoRuta: esLineal
+          ? TipoRutaOperacional.lineal
+          : TipoRutaOperacional.cerrada,
+      largoM: largo,
+      paradaConfigurada: esLineal,
+      paradaNombre: esLineal ? 'Estación 1' : '',
+    );
+    _capa3.iniciarEscaneo();
     _ticker = createTicker(_tick)..start();
   }
 
@@ -63,10 +81,62 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     final double dt = (t - _ultimo).inMicroseconds / 1e6;
     _ultimo = t;
     if (dt <= 0 || _escaneo.completado) return;
-    setState(
-      () => _escaneo.avanzar(math.min(dt, 0.25) * widget.velocidadReproduccion),
-    );
+    final double dtClamped = math.min(dt, 0.25);
+    setState(() {
+      _capa3.avanzarReloj(dtClamped);
+      if (_capa3.estadoRuta != EstadoRutaOperacional.esperaReposicion) {
+        _escaneo.avanzar(
+          dtClamped * widget.velocidadReproduccion * _capa3.escalaReloj,
+        );
+      }
+    });
     if (_escaneo.completado) _terminar();
+  }
+
+  void _cambiarTipoRuta(TipoRutaOperacional tipo) {
+    setState(() {
+      _capa3.setTipoRuta(tipo);
+      _capa3.configurarParada(_paradaCtrl.text);
+      if (tipo == TipoRutaOperacional.lineal && !_capa3.paradaConfigurada) {
+        _errorValidacionParada =
+            'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
+      } else {
+        _errorValidacionParada = null;
+        _capa3.iniciarEscaneo();
+      }
+    });
+  }
+
+  void _actualizarParada(String valor) {
+    setState(() {
+      final bool ok = _capa3.configurarParada(valor);
+      if (_capa3.tipoRuta == TipoRutaOperacional.lineal && !ok) {
+        _errorValidacionParada =
+            'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
+      } else {
+        _errorValidacionParada = null;
+      }
+    });
+  }
+
+  void _simularFinPasadaIda() {
+    setState(() {
+      if (_capa3.estadoRuta == EstadoRutaOperacional.sinRuta) {
+        final ResultadoCapa3 r = _capa3.iniciarEscaneo();
+        if (!r.ok) {
+          _errorValidacionParada =
+              'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
+          return;
+        }
+      }
+      _capa3.completarPasadaIda();
+    });
+  }
+
+  void _confirmarReposicionamiento() {
+    setState(() {
+      _capa3.confirmarReposicionamiento();
+    });
   }
 
   void _terminar() {
@@ -88,6 +158,7 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
   @override
   void dispose() {
     _ticker.dispose();
+    _paradaCtrl.dispose();
     _escaneo.dispose();
     super.dispose();
   }
@@ -131,6 +202,19 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
                   ),
                   const SizedBox(height: 10),
                   const _AvisoCalibracionAdmin(),
+                  const SizedBox(height: 10),
+                  _PanelCapa3Escaneo(
+                    capa3: _capa3,
+                    paradaCtrl: _paradaCtrl,
+                    errorParada: _errorValidacionParada,
+                    formato: _m,
+                    onTipoRuta: _cambiarTipoRuta,
+                    onParadaChanged: _actualizarParada,
+                    onEscalaReloj: (int f) =>
+                        setState(() => _capa3.setEscalaReloj(f)),
+                    onMarcarFinIda: _simularFinPasadaIda,
+                    onConfirmarReposicion: _confirmarReposicionamiento,
+                  ),
                   const SizedBox(height: 12),
                   _Lienzo(escaneo: _escaneo),
                   const SizedBox(height: 8),
@@ -784,6 +868,194 @@ class _Datos extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Panel de Capa 3 en el Escaneo: selector Ruta Cerrada vs. Ruta Lineal,
+/// validación de parada obligatoria en lineal, barra de tiempos reales
+/// (`0,41 m/s` / `0,16 m/s`), selector de reloj Demo `1x / 2x / 4x` y botón
+/// manual "Confirmar reposicionamiento" en `ESPERA_REPOSICION`.
+class _PanelCapa3Escaneo extends StatelessWidget {
+  const _PanelCapa3Escaneo({
+    required this.capa3,
+    required this.paradaCtrl,
+    required this.errorParada,
+    required this.formato,
+    required this.onTipoRuta,
+    required this.onParadaChanged,
+    required this.onEscalaReloj,
+    required this.onMarcarFinIda,
+    required this.onConfirmarReposicion,
+  });
+
+  final Capa3OperacionalController capa3;
+  final TextEditingController paradaCtrl;
+  final String? errorParada;
+  final String Function(double) formato;
+  final ValueChanged<TipoRutaOperacional> onTipoRuta;
+  final ValueChanged<String> onParadaChanged;
+  final ValueChanged<int> onEscalaReloj;
+  final VoidCallback onMarcarFinIda;
+  final VoidCallback onConfirmarReposicion;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool esLineal = capa3.tipoRuta == TipoRutaOperacional.lineal;
+    final bool esperandoRepos =
+        capa3.estadoRuta == EstadoRutaOperacional.esperaReposicion;
+    return Container(
+      key: const Key('escaneo-panel-capa3'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: CockpitColors.surfaceLow,
+        borderRadius: BorderRadius.circular(CockpitRadius.lg),
+        border: Border.all(
+          color: esperandoRepos
+              ? CockpitColors.warning.withValues(alpha: 0.7)
+              : CockpitColors.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              Text(
+                'CONFIGURACIÓN DE RUTA · CAPA 3',
+                style: CockpitText.labelMd.copyWith(
+                  color: CockpitColors.primary,
+                ),
+              ),
+              Container(
+                key: const Key('escaneo-capa3-estado'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: CockpitColors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(CockpitRadius.sm),
+                ),
+                child: Text(
+                  capa3.estadoRuta.clave,
+                  style: CockpitText.telemetrySm.copyWith(
+                    color: esperandoRepos
+                        ? CockpitColors.warning
+                        : CockpitColors.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              ChoiceChip(
+                key: const Key('escaneo-tipo-cerrada'),
+                label: const Text('Ruta Cerrada'),
+                selected: !esLineal,
+                onSelected: (_) => onTipoRuta(TipoRutaOperacional.cerrada),
+              ),
+              ChoiceChip(
+                key: const Key('escaneo-tipo-lineal'),
+                label: const Text('Ruta Lineal (doble escaneo)'),
+                selected: esLineal,
+                onSelected: (_) => onTipoRuta(TipoRutaOperacional.lineal),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            key: const Key('escaneo-parada-input'),
+            controller: paradaCtrl,
+            onChanged: onParadaChanged,
+            style: CockpitText.bodyMd.copyWith(color: CockpitColors.onSurface),
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: esLineal
+                  ? 'Parada de entrega (obligatoria en lineal)'
+                  : 'Parada de entrega (opcional en cerrada)',
+              hintText: 'Ej. Estación 1',
+              errorText: errorParada,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            key: const Key('escaneo-tiempos-capa3'),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: CockpitColors.surfaceLowest,
+              borderRadius: BorderRadius.circular(CockpitRadius.md),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              alignment: WrapAlignment.spaceBetween,
+              children: <Widget>[
+                Text(
+                  'Estimado: ${formato(capa3.duracionEstimadaEscaneoS)} s'
+                  '${esLineal ? ' + pausa manual' : ''}',
+                  style: CockpitText.telemetrySm.copyWith(
+                    color: CockpitColors.primary,
+                  ),
+                ),
+                Text(
+                  'Sim: ${formato(capa3.tiempoSimS)} s · Real: ${formato(capa3.tiempoRealS)} s · Rest: ${formato(capa3.tiempoRestanteEstimadoS)} s',
+                  style: CockpitText.telemetrySm.copyWith(
+                    color: CockpitColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              Text(
+                'Reloj Demo:',
+                style: CockpitText.labelMd.copyWith(
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+              for (final int f in Capa3OperacionalController.escalasReloj)
+                ChoiceChip(
+                  key: Key('escaneo-reloj-${f}x'),
+                  label: Text('${f}x'),
+                  selected: capa3.escalaReloj == f,
+                  onSelected: (_) => onEscalaReloj(f),
+                ),
+              if (esLineal &&
+                  capa3.estadoRuta == EstadoRutaOperacional.escaneoIda)
+                OutlinedButton(
+                  key: const Key('escaneo-fin-ida'),
+                  onPressed: onMarcarFinIda,
+                  child: const Text('Fin pasada ida'),
+                ),
+            ],
+          ),
+          if (esperandoRepos) ...<Widget>[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: const Key('escaneo-confirmar-reposicion'),
+              style: FilledButton.styleFrom(
+                backgroundColor: CockpitColors.warning,
+                foregroundColor: CockpitColors.primaryText,
+              ),
+              onPressed: onConfirmarReposicion,
+              icon: const Icon(Icons.rotate_90_degrees_cw),
+              label: const Text('Confirmar reposicionamiento'),
+            ),
+          ],
         ],
       ),
     );

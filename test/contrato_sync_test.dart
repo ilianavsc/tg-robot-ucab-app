@@ -215,6 +215,53 @@ void main() {
       expect(umbrales['rssiLlegadaDbm'], RobotTrackContract.rssiLlegadaDbm);
       expect(umbrales.containsKey('rssiLlegadadBm'), isFalse);
     });
+
+    test('7. anti-deriva: robot_contract.dart coincide 1:1 con test/fixtures/contract.json', () {
+      final Map<String, dynamic> contract =
+          jsonDecode(
+                File('test/fixtures/contract.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(contract['version'], RobotMqttContract.version);
+      expect(contract['schema_version'], RobotMqttContract.schemaVersion);
+
+      final Map<String, dynamic> topicos =
+          contract['topicos'] as Map<String, dynamic>;
+      expect(topicos.length, RobotMqttContract.topicosMeta.length);
+      for (final MapEntry<String, dynamic> entry in topicos.entries) {
+        final Map<String, dynamic> jsonMeta =
+            entry.value as Map<String, dynamic>;
+        final MqttTopicMeta dartMeta =
+            RobotMqttContract.topicosMeta[entry.key]!;
+        expect(dartMeta.ruta, jsonMeta['ruta'], reason: '${entry.key}.ruta');
+        expect(dartMeta.qos, jsonMeta['qos'], reason: '${entry.key}.qos');
+        expect(
+          dartMeta.retained,
+          jsonMeta['retained'],
+          reason: '${entry.key}.retained',
+        );
+        expect(
+          dartMeta.direccion,
+          jsonMeta['direccion'],
+          reason: '${entry.key}.direccion',
+        );
+      }
+
+      final Map<String, dynamic> capa3 =
+          contract['capa3Operacional'] as Map<String, dynamic>;
+      expect(
+        List<String>.from(capa3['estadosRuta'] as List<dynamic>),
+        RobotMqttContract.estadosRuta,
+      );
+      expect(
+        List<String>.from(capa3['estadosPedido'] as List<dynamic>),
+        RobotMqttContract.estadosPedido,
+      );
+      expect(
+        List<String>.from(capa3['alertasMpu6050'] as List<dynamic>),
+        RobotMqttContract.alertasMpu6050,
+      );
+    });
   });
 
   group('Sistema de Diseño Oscuro (cockpit_theme.dart)', () {

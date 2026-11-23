@@ -8,6 +8,7 @@ import '../../core/demo/simulacion_pista.dart';
 import '../../core/models/estado.dart';
 import '../../core/models/ultrasonido.dart';
 import '../../core/mqtt/mqtt_service.dart';
+import '../../core/operacion/capa3_operacional.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../auth/catalogo_pistas.dart';
 import 'cockpit_datos.dart';
@@ -56,6 +57,8 @@ class PantallaDashboard extends StatelessWidget {
             _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
           else
             _TarjetaPedido(servicio: servicio, solicitud: solicitud),
+          const SizedBox(height: 12),
+          _TarjetaOperacionCapa3(servicio: servicio, tecnico: false),
         ],
       );
     }
@@ -76,6 +79,8 @@ class PantallaDashboard extends StatelessWidget {
           _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
         else
           _TarjetaPedido(servicio: servicio, solicitud: solicitud),
+        const SizedBox(height: 12),
+        _TarjetaOperacionCapa3(servicio: servicio, tecnico: true),
         const SizedBox(height: 12),
         CockpitColumnas(
           children: <Widget>[
@@ -1236,6 +1241,284 @@ class _TarjetaObstaculos extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta operacional de **Capa 3** (Rutas + Pedidos + Seguridad MPU-6050).
+///
+/// En vista de Operador (`tecnico == false`) se mantiene libre de jerga técnica
+/// (`EN VIVO` / `DEMO`, sin exponer términos de transporte ni brokers).
+class _TarjetaOperacionCapa3 extends StatelessWidget {
+  const _TarjetaOperacionCapa3({
+    required this.servicio,
+    required this.tecnico,
+  });
+
+  final MqttService servicio;
+  final bool tecnico;
+
+  @override
+  Widget build(BuildContext context) {
+    final Capa3OperacionalController c = servicio.capa3;
+    final bool enAlertaMpu =
+        c.alertaMpu != null ||
+        c.estadoRuta == EstadoRutaOperacional.errorSeguridad ||
+        c.estadoRuta == EstadoRutaOperacional.recuperacionManual;
+    final bool esCerradaSinParada =
+        c.tipoRuta == TipoRutaOperacional.cerrada && !c.paradaConfigurada;
+    final bool puedeCancelar =
+        c.estadoPedido == EstadoPedidoOperacional.solicitado ||
+        c.estadoPedido == EstadoPedidoOperacional.enTransito;
+
+    return CockpitCard(
+      key: const Key('tarjeta-capa3'),
+      borde: enAlertaMpu
+          ? CockpitColors.hazard.withValues(alpha: 0.75)
+          : CockpitColors.outlineVariant.withValues(alpha: 0.45),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SectionLabel(
+            icono: Icons.alt_route,
+            etiqueta: 'Operación de ruta y pedidos',
+            trailing: StatusPill(
+              texto: servicio.simulando ? 'DEMO' : 'EN VIVO',
+              color: servicio.simulando
+                  ? CockpitColors.secondary
+                  : CockpitColors.ok,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: <Widget>[
+              StatusPill(
+                texto: 'Ruta: ${c.estadoRuta.clave}',
+                color: enAlertaMpu
+                    ? CockpitColors.hazard
+                    : CockpitColors.primary,
+              ),
+              StatusPill(
+                texto: 'Pedido: ${c.estadoPedido.clave}',
+                color: c.estadoPedido == EstadoPedidoOperacional.cancelacionSegura
+                    ? CockpitColors.warning
+                    : (c.estadoPedido == EstadoPedidoOperacional.enTransito
+                          ? CockpitColors.ok
+                          : CockpitColors.onSurfaceVariant),
+              ),
+              if (c.paradaConfigurada)
+                StatusPill(
+                  texto: 'Parada: ${c.paradaNombre}',
+                  color: CockpitColors.ok,
+                ),
+            ],
+          ),
+          if (enAlertaMpu) ...<Widget>[
+            const SizedBox(height: 12),
+            Container(
+              key: const Key('capa3-banner-mpu'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: CockpitColors.hazard.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(CockpitRadius.md),
+                border: Border.all(
+                  color: CockpitColors.hazard.withValues(alpha: 0.65),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.gpp_bad_outlined,
+                        color: CockpitColors.hazard,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Alerta inercial MPU-6050: ${c.alertaMpu?.etiqueta ?? "Seguridad activa"}',
+                          style: CockpitText.labelMd.copyWith(
+                            color: CockpitColors.hazard,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    c.estadoRuta == EstadoRutaOperacional.recuperacionManual
+                        ? 'Recuperación manual en curso. Verifica el robot y confirma para reanudar.'
+                        : 'Movimiento bloqueado por seguridad. Inicia recuperación manual para continuar.',
+                    style: CockpitText.bodySm.copyWith(
+                      color: CockpitColors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (c.estadoRuta == EstadoRutaOperacional.errorSeguridad)
+                    FilledButton.icon(
+                      key: const Key('capa3-iniciar-recuperacion'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: CockpitColors.hazard,
+                        foregroundColor: CockpitColors.onSurface,
+                      ),
+                      onPressed: servicio.iniciarRecuperacionManualCapa3,
+                      icon: const Icon(Icons.build_circle_outlined),
+                      label: const Text('Iniciar recuperación manual'),
+                    )
+                  else if (c.estadoRuta ==
+                      EstadoRutaOperacional.recuperacionManual)
+                    FilledButton.icon(
+                      key: const Key('capa3-completar-recuperacion'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: CockpitColors.ok,
+                        foregroundColor: CockpitColors.primaryText,
+                      ),
+                      onPressed: servicio.completarRecuperacionManualCapa3,
+                      icon: const Icon(Icons.verified_user_outlined),
+                      label: const Text('Confirmar recuperación y reanudar'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (esCerradaSinParada) ...<Widget>[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: CockpitColors.surfaceLowest,
+                borderRadius: BorderRadius.circular(CockpitRadius.md),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        'Usos en ruta cerrada: ${c.usosCompletados}/${Capa3OperacionalController.usosParaParada}',
+                        key: const Key('capa3-usos-contador'),
+                        style: CockpitText.telemetrySm.copyWith(
+                          color: c.puedeReescanearParada
+                              ? CockpitColors.ok
+                              : CockpitColors.onSurface,
+                        ),
+                      ),
+                      if (servicio.simulando)
+                        OutlinedButton(
+                          key: const Key('capa3-registrar-uso'),
+                          onPressed: () =>
+                              servicio.registrarUsoCapa3(exitoso: true),
+                          child: const Text('+1 uso completado'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    key: const Key('capa3-reescanear-parada'),
+                    onPressed: c.puedeReescanearParada
+                        ? () {
+                            servicio.iniciarReescaneoParadaCapa3('Parada 1');
+                            servicio.completarReescaneoParadaCapa3();
+                          }
+                        : null,
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('Reescanear para configurar parada'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              FilledButton.icon(
+                key: const Key('capa3-solicitar-pedido'),
+                onPressed: c.puedeSolicitarPedido
+                    ? () => servicio.solicitarPedidoCapa3(
+                        paradaId: c.paradaNombre,
+                      )
+                    : null,
+                icon: const Icon(Icons.local_shipping_outlined),
+                label: const Text('Solicitar pedido'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('capa3-cancelar-pedido'),
+                onPressed: puedeCancelar
+                    ? () => servicio.cancelarPedidoSeguroCapa3()
+                    : null,
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Cancelar pedido'),
+              ),
+              if (c.estadoPedido == EstadoPedidoOperacional.enTransito)
+                OutlinedButton.icon(
+                  key: const Key('capa3-entregar-pedido'),
+                  onPressed: () {
+                    servicio.completarEntregaCapa3();
+                    servicio.cerrarEntregaCapa3();
+                  },
+                  icon: const Icon(Icons.task_alt),
+                  label: const Text('Marcar entregado'),
+                ),
+              if (c.estadoPedido == EstadoPedidoOperacional.cancelacionSegura)
+                FilledButton.icon(
+                  key: const Key('capa3-confirmar-cancelacion'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CockpitColors.warning,
+                    foregroundColor: CockpitColors.primaryText,
+                  ),
+                  onPressed: servicio.confirmarDetencionCancelacionCapa3,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Confirmar detención segura'),
+                ),
+            ],
+          ),
+          if (servicio.simulando && !enAlertaMpu) ...<Widget>[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                Text(
+                  'Pruebas de seguridad:',
+                  style: CockpitText.bodySm.copyWith(
+                    color: CockpitColors.onSurfaceVariant,
+                  ),
+                ),
+                ActionChip(
+                  key: const Key('capa3-demo-impacto'),
+                  label: const Text('Impacto'),
+                  onPressed: () =>
+                      servicio.dispararAlertaMpuDemo(AlertaMpu6050.impacto),
+                ),
+                ActionChip(
+                  key: const Key('capa3-demo-inclinacion'),
+                  label: const Text('Inclinación'),
+                  onPressed: () =>
+                      servicio.dispararAlertaMpuDemo(AlertaMpu6050.inclinacion),
+                ),
+                ActionChip(
+                  key: const Key('capa3-demo-atascamiento'),
+                  label: const Text('Atascamiento'),
+                  onPressed: () => servicio.dispararAlertaMpuDemo(
+                    AlertaMpu6050.atascamiento,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
