@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric, Tangent;
 
@@ -45,6 +46,7 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
   late final Capa3OperacionalController _capa3;
   late final TextEditingController _paradaCtrl;
   late final Ticker _ticker;
+  Timer? _timerVolver;
   Duration _ultimo = Duration.zero;
   bool _guardada = false;
   bool _saliendo = false;
@@ -146,7 +148,8 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
       _escaneo.metricas!,
     );
     _ticker.stop();
-    Future<void>.delayed(widget.volverAlTerminar, _volver);
+    _timerVolver?.cancel();
+    _timerVolver = Timer(widget.volverAlTerminar, _volver);
   }
 
   void _volver() {
@@ -157,6 +160,9 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
 
   @override
   void dispose() {
+    _timerVolver?.cancel();
+    _timerVolver = null;
+    _ticker.stop(canceled: true);
     _ticker.dispose();
     _paradaCtrl.dispose();
     _escaneo.dispose();

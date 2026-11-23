@@ -599,6 +599,11 @@ class Capa3OperacionalController {
   }
 
   /// Procesa telemetría QoS 0 de `sensores/inercial` (MPU-6050).
+  ///
+  /// **Blindaje fail-safe (disparo dual):** si `alerta != null`, fuerza
+  /// `ERROR_SEGURIDAD` de inmediato; si `alerta == null`, **nunca** limpia un
+  /// `ERROR_SEGURIDAD` ni `RECUPERACION_MANUAL` activo (solo la recuperación
+  /// manual explícita puede despejarlo).
   void procesarSensoresInercialJson(Map<String, dynamic> json) {
     final LecturaInercial lectura = LecturaInercial.fromJson(json);
     _ultimaLecturaInercial = lectura;

@@ -189,6 +189,76 @@ void main() {
       expect(svc.capa3.estadoRuta, EstadoRutaOperacional.errorSeguridad);
       expect(svc.capa3.alertaMpu, AlertaMpu6050.inclinacion);
     });
+
+    test('blindaje fail-safe dual QoS 2 y QoS 0: disparo dual e inmunidad ante alerta: null en QoS 0', () {
+      final MqttService svc = MqttService();
+      svc.iniciarSimulacion();
+      addTearDown(svc.dispose);
+
+      // 1) Disparo por alertas (QoS 2)
+      svc.debugProcesarAlertaMpu(jsonEncode(<String, dynamic>{
+        'tipo': 'impacto',
+        'valor': 2.9,
+        'timestamp': 4000,
+      }));
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.errorSeguridad);
+      expect(svc.capa3.alertaMpu, AlertaMpu6050.impacto);
+      expect(svc.publicarOrden('adelante'), isFalse);
+
+      // 2) Recibir alerta: null en sensores/inercial (QoS 0) NUNCA limpia ERROR_SEGURIDAD
+      svc.debugProcesarSensoresInercial(jsonEncode(<String, dynamic>{
+        'pitch': 0.5,
+        'roll': -0.2,
+        'acel_g': 1.0,
+        'alerta': null,
+        'timestamp': 4500,
+        'schema_version': '2.0.0',
+      }));
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.errorSeguridad);
+      expect(svc.capa3.alertaMpu, AlertaMpu6050.impacto);
+      expect(svc.capa3.ultimaLecturaInercial?.acelG, closeTo(1.0, 0.01));
+      expect(svc.publicarOrden('auto'), isFalse);
+
+      // Solo RECUPERACION_MANUAL puede despejar ERROR_SEGURIDAD
+      expect(svc.iniciarRecuperacionManualCapa3(), isTrue);
+      svc.debugProcesarSensoresInercial(jsonEncode(<String, dynamic>{
+        'pitch': 0.1,
+        'roll': 0.0,
+        'acel_g': 1.0,
+        'alerta': null,
+        'timestamp': 4600,
+        'schema_version': '2.0.0',
+      }));
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.recuperacionManual);
+      expect(svc.completarRecuperacionManualCapa3(), isTrue);
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.operacionConParada);
+      expect(svc.capa3.alertaMpu, isNull);
+
+      // 3) Disparo dual por sensores/inercial (QoS 0) con alerta != null
+      svc.debugProcesarSensoresInercial(jsonEncode(<String, dynamic>{
+        'pitch': 42.0,
+        'roll': 3.0,
+        'acel_g': 1.2,
+        'alerta': 'inclinacion',
+        'timestamp': 5000,
+        'schema_version': '2.0.0',
+      }));
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.errorSeguridad);
+      expect(svc.capa3.alertaMpu, AlertaMpu6050.inclinacion);
+      expect(svc.publicarOrden('adelante'), isFalse);
+
+      // Otra lectura QoS 0 con alerta: null sigue sin limpiar el bloqueo
+      svc.debugProcesarSensoresInercial(jsonEncode(<String, dynamic>{
+        'pitch': 0.0,
+        'roll': 0.0,
+        'acel_g': 1.0,
+        'alerta': null,
+        'timestamp': 5200,
+        'schema_version': '2.0.0',
+      }));
+      expect(svc.capa3.estadoRuta, EstadoRutaOperacional.errorSeguridad);
+      expect(svc.capa3.alertaMpu, AlertaMpu6050.inclinacion);
+    });
   });
 
   group('Capa 3 — UI (PantallaEscaneoPista y PantallaDashboard)', () {

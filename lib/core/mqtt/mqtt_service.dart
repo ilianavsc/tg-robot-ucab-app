@@ -112,6 +112,7 @@ class MqttService extends ChangeNotifier {
   static const Duration _periodoDemo = Duration(milliseconds: 250);
   static const int _ticksPorMuestra = 8;
   Timer? _temporizadorDemo;
+  final Set<Timer> _timersAckDemo = <Timer>{};
   SimulacionPista? _pista;
   int _ticksDemo = 0;
   int _publicadosDemo = 0;
@@ -304,7 +305,12 @@ class MqttService extends ChangeNotifier {
       // La orden actúa al instante sobre la simulación (frenar, auto, D-pad).
       _pista?.aplicarOrden(comando);
       _actualizarDemo(0);
-      Timer(const Duration(milliseconds: 300), () => _confirmarDemo(id));
+      late final Timer tAck;
+      tAck = Timer(const Duration(milliseconds: 300), () {
+        _timersAckDemo.remove(tAck);
+        _confirmarDemo(id);
+      });
+      _timersAckDemo.add(tAck);
       return true;
     }
 
@@ -685,6 +691,10 @@ class MqttService extends ChangeNotifier {
   void detenerSimulacion() {
     _temporizadorDemo?.cancel();
     _temporizadorDemo = null;
+    for (final Timer t in _timersAckDemo) {
+      t.cancel();
+    }
+    _timersAckDemo.clear();
     final bool estabaSimulando = _simulando;
     _simulando = false;
     _pista = null;
@@ -728,6 +738,10 @@ class MqttService extends ChangeNotifier {
   void dispose() {
     _descartado = true;
     _temporizadorDemo?.cancel();
+    for (final Timer t in _timersAckDemo) {
+      t.cancel();
+    }
+    _timersAckDemo.clear();
     _temporizadorReintento?.cancel();
     _suscripcion?.cancel();
     try {
@@ -995,7 +1009,9 @@ class MqttService extends ChangeNotifier {
       analitica.registrarAlerta();
       final clave = centroAlertas.registrarDelRobot(mapa);
       if (clave != null) _contarParadas(<String>[clave]);
-      capa3.procesarAlertaMpuJson(mapa);
+      if (capa3.procesarAlertaMpuJson(mapa) && _simulando) {
+        _pista?.aplicarOrden('frenar');
+      }
     } catch (e) {
       _ultimoError = 'JSON inválido en $topicoAlertas: $e';
     }
@@ -1038,6 +1054,10 @@ class MqttService extends ChangeNotifier {
         throw const FormatException('el payload no es un objeto JSON');
       }
       capa3.procesarSensoresInercialJson(mapa);
+      if (capa3.estadoRuta == EstadoRutaOperacional.errorSeguridad &&
+          _simulando) {
+        _pista?.aplicarOrden('frenar');
+      }
     } catch (e) {
       _ultimoError = 'JSON inválido en $topicoSensoresInercial: $e';
     }
