@@ -332,7 +332,13 @@ class _PintorEscaneo extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Rect r = Rect.fromLTRB(28, 40, size.width - 28, size.height - 34);
+    final double margenX = math.max(36, size.width * 0.08);
+    final Rect r = Rect.fromLTRB(
+      margenX,
+      44,
+      math.max(margenX + 40, size.width - margenX),
+      math.max(84, size.height - 38),
+    );
     final double largo = e.largoM;
     // Trazado subyacente descubierto progresivamente (nunca pre-dibujado antes).
     final TrazadoPista trazado = TrazadoPista.paraPista(
@@ -467,10 +473,11 @@ class _PintorEscaneo extends CustomPainter {
     );
     for (int i = 0; i < pc.length; i++) {
       final Offset q = m.getTangentForOffset(f(pc[i]))!.position;
+      final String etq = i == 2 ? 'PC3 / META' : 'PC${i + 1}';
       _rombo(
         canvas,
         q,
-        'PC${i + 1}',
+        etq,
         abajo: trazado.cerrada ? q.dy > r.center.dy : true,
       );
     }

@@ -57,6 +57,14 @@ class Estado {
   /// Motivo de la parada activa (`parada`), o `ninguna`.
   final String parada;
 
+  /// Avance sobre la pista en metros (`progreso_m`, exclusivo de simulador P04).
+  /// Es `null` en telemetría del hardware físico HIL.
+  final double? progresoM;
+
+  /// Longitud total de la pista en metros (`largo_m`, exclusivo de simulador P04).
+  /// Es `null` en telemetría del hardware físico HIL.
+  final double? largoM;
+
   const Estado({
     required this.numero,
     required this.modo,
@@ -68,6 +76,8 @@ class Estado {
     required this.vDer,
     required this.t,
     this.parada = 'ninguna',
+    this.progresoM,
+    this.largoM,
   });
 
   /// Construye el modelo a partir del JSON recibido.
@@ -87,6 +97,8 @@ class Estado {
       vDer: _decimal(json['v_der']),
       t: _entero(json['t']),
       parada: json['parada'] is String ? json['parada'] as String : 'ninguna',
+      progresoM: _decimalOpcional(json['progreso_m']),
+      largoM: _decimalOpcional(json['largo_m']),
     );
   }
 
@@ -102,6 +114,8 @@ class Estado {
         'v_der': vDer,
         'parada': parada,
         't': t,
+        if (progresoM != null) 'progreso_m': progresoM,
+        if (largoM != null) 'largo_m': largoM,
       };
 
   // ---------------------------------------------------------------- ayudas
@@ -155,6 +169,14 @@ class Estado {
     if (v is int) return v.toDouble();
     if (v is String) return double.tryParse(v) ?? 0.0;
     return 0.0;
+  }
+
+  static double? _decimalOpcional(dynamic v) {
+    if (v == null) return null;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
   }
 
   @override

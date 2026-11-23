@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:robot_ucab_app/core/demo/simulacion_pista.dart';
+import 'package:robot_ucab_app/core/models/estado.dart';
 import 'package:robot_ucab_app/core/mqtt/mqtt_service.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 import 'package:robot_ucab_app/features/telemetria/cockpit_ui.dart';
@@ -385,6 +386,7 @@ void main() {
     ('390×844', 390, 844),
     ('360×740', 360, 740),
     ('1100×800', 1100, 800),
+    ('1280×840', 1280, 840),
   ]) {
     testWidgets('el Mapa de Pista no desborda durante todo el ciclo ($n)', (
       WidgetTester t,
@@ -398,4 +400,111 @@ void main() {
       await _cerrar(t, s);
     });
   }
+
+  group('pista lineal en Modo Demo y estados visuales (paridad P04)', () {
+    testWidgets(
+      'Modo Demo renderiza pista lineal con PC1-PC3 equitativos y telemetría integrada',
+      (WidgetTester t) async {
+        final MqttService s = await _montar(
+          t,
+          ancho: 1280,
+          alto: 840,
+          demo: true,
+        );
+        final CustomPaint lienzo = t.widget<CustomPaint>(
+          find.byKey(const Key('mapa-pista-lienzo')),
+        );
+        final PintorPista pintor = lienzo.painter! as PintorPista;
+        expect(pintor.trazado, isNotNull);
+        expect(pintor.trazado!.cerrada, isFalse);
+        expect(pintor.mostrarCheckpointsP05, isTrue);
+        expect(pintor.puntosControlM, <double>[3.0, 6.0, 9.0]);
+        expect(find.byKey(const Key('mapa-telemetria-barra')), findsOneWidget);
+        expect(find.byKey(const Key('mapa-distancia')), findsOneWidget);
+        expect(find.byKey(const Key('mapa-porcentaje')), findsOneWidget);
+        expect(
+          t.widget<Text>(find.byKey(const Key('mapa-modo-badge'))).data,
+          'DEMO',
+        );
+        expect(
+          t.widget<Text>(find.byKey(const Key('mapa-estado-robot'))).data,
+          'EN MARCHA',
+        );
+
+        // Avanzar y verificar interpolación fluida sin saltos
+        s.debugEmitirPasoDemo();
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 140));
+        final PintorPista pintorMid =
+            t
+                    .widget<CustomPaint>(
+                      find.byKey(const Key('mapa-pista-lienzo')),
+                    )
+                    .painter!
+                as PintorPista;
+        expect(pintorMid.fraccionRobot, isNotNull);
+        expect(pintorMid.fraccionRobot!, greaterThan(0.0));
+        await _cerrar(t, s);
+      },
+    );
+
+    testWidgets(
+      'estados del robot: Freno Remoto cambia el indicador a FRENADO (rojo coral)',
+      (WidgetTester t) async {
+        final MqttService s = await _montar(
+          t,
+          ancho: 390,
+          alto: 844,
+          demo: true,
+        );
+        await t.tap(find.text('Freno Remoto'));
+        await t.pump(const Duration(milliseconds: 120));
+        final PintorPista pintor =
+            t
+                    .widget<CustomPaint>(
+                      find.byKey(const Key('mapa-pista-lienzo')),
+                    )
+                    .painter!
+                as PintorPista;
+        expect(pintor.estadoRobot, EstadoVisualRobot.frenado);
+        expect(
+          t.widget<Text>(find.byKey(const Key('mapa-estado-robot'))).data,
+          'FRENADO',
+        );
+        await _cerrar(t, s);
+      },
+    );
+
+    test('Estado.fromJson parsea progreso_m y largo_m opcionales de P04', () {
+      final Estado conP04 = Estado.fromJson(<String, dynamic>{
+        'n': 7,
+        'estado': 'autonomo',
+        'bateria': 92,
+        'bateria_v': 12.1,
+        'ordenes': 1,
+        'linea_mm': 0.5,
+        'v_izq': 0.4,
+        'v_der': 0.4,
+        't': 3000,
+        'progreso_m': 4.5,
+        'largo_m': 9.0,
+      });
+      expect(conP04.progresoM, 4.5);
+      expect(conP04.largoM, 9.0);
+
+      final Estado sinP04 = Estado.fromJson(<String, dynamic>{
+        'n': 8,
+        'estado': 'autonomo',
+        'bateria': 92,
+        'bateria_v': 12.1,
+        'ordenes': 1,
+        'linea_mm': 0.5,
+        'v_izq': 0.4,
+        'v_der': 0.4,
+        't': 4500,
+      });
+      expect(sinP04.progresoM, isNull);
+      expect(sinP04.largoM, isNull);
+    });
+  });
 }

@@ -233,7 +233,7 @@ class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
           ),
           const SizedBox(height: 4),
           Text(
-            pista?.esLineal == true
+            (sim != null || pista?.esLineal == true)
                 ? 'Pista lineal · recorrido completo'
                 : 'Circuito cerrado · recorrido completo',
             key: const Key('recorrido-subtitulo'),
@@ -251,7 +251,7 @@ class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
           ] else if (completado) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              'Recorrido completado · regreso al inicio',
+              'Recorrido completado · meta alcanzada (PC3 / META)',
               key: const Key('recorrido-estado'),
               style: CockpitText.bodySm.copyWith(color: CockpitColors.ok),
             ),
