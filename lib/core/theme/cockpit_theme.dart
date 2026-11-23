@@ -21,11 +21,13 @@ abstract final class CockpitColors {
   ); // botones secundarios, pozos
   static const Color surfaceHighest = Color(0xFF31353C); // modales
 
-  // Texto y contornos
+  // Texto y contornos (espejo modo oscuro de tokens.css)
   static const Color onSurface = Color(0xFFDFE2EB);
   static const Color onSurfaceVariant = Color(0xFFB9CACB);
   static const Color outline = Color(0xFF849495);
   static const Color outlineVariant = Color(0xFF3A494B);
+  static const Color borderSubtle = Color(0x14FFFFFF); // rgba(255,255,255,0.08)
+  static const Color neutral = outline;
 
   // Primario: "Cyber Teal". `primary` es el token primary-container (#00F2FE),
   // el acento real de las capturas; `primaryText` es el token primary (#E0FDFF).
@@ -127,49 +129,53 @@ abstract final class CockpitText {
     fontWeight: FontWeight.w400,
   );
 
-  /// Lectura grande (22 px, 700).
+  /// Lectura grande (22 px, 700, tabular-nums).
   static const TextStyle telemetryLg = TextStyle(
     fontFamily: mono,
     fontSize: 22,
     height: 28 / 22,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.22,
+    fontFeatures: tabular,
   );
 
-  /// Lectura media (14 px, 500).
+  /// Lectura media (14 px, 500, tabular-nums).
   static const TextStyle telemetryMd = TextStyle(
     fontFamily: mono,
     fontSize: 14,
     height: 18 / 14,
     fontWeight: FontWeight.w500,
+    fontFeatures: tabular,
   );
 
-  /// Etiqueta de grupo diagnóstico (11 px, 400, mayúsculas).
+  /// Etiqueta de grupo diagnóstico (11 px, 400, mayúsculas, tabular-nums).
   static const TextStyle telemetrySm = TextStyle(
     fontFamily: mono,
     fontSize: 11,
     height: 14 / 11,
     fontWeight: FontWeight.w400,
     letterSpacing: 0.44,
+    fontFeatures: tabular,
   );
 
-  /// Etiqueta de estado o de control (12 px, 600, mayúsculas).
+  /// Etiqueta de estado o de control (12 px, 600, mayúsculas, tabular-nums).
   static const TextStyle labelMd = TextStyle(
     fontFamily: mono,
     fontSize: 12,
     height: 16 / 12,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.6,
+    fontFeatures: tabular,
   );
 }
 
-/// Radios del DESIGN.md: 4 px base, 8 px grupos de control, 12 px botones y
-/// tarjetas principales, cápsula completa para pastillas de estado.
+/// Radios compartidos (4 / 8 / 12 / 16 px) y objetivo táctil mínimo (44 px).
 abstract final class CockpitRadius {
   static const double sm = 4;
   static const double md = 8;
   static const double lg = 12;
   static const double xl = 16;
+  static const double touchMin = 44;
 }
 
 /// Tema oscuro Material 3 del Cockpit. Se usa como `theme` y `darkTheme`.
