@@ -1,8 +1,9 @@
 {
   "sourceRepo": "ilianavsc/tg-robot-ucab-portfolio",
   "sourceBranch": "main",
-  "sourceCommit": "a3dba9eb86062f808cf502d0389b0f6a4b9278d1",
-  "contractVersion": "1.0.0",
+  "sourceCommit": "934490fe29b6876f7ac20a9528015a2c3961ccb1",
+  "contractVersion": "2.0.0",
+  "schemaVersion": "2.0.0",
   "syncedFiles": [
     "specs/mqtt/contract.json",
     "specs/pista_canonica.json"

@@ -10,18 +10,92 @@ import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 
 void main() {
   group('Contrato MQTT y Pista generado (offline)', () {
-    test('source-lock.json registra el SHA del repo portafolio', () {
+    test('source-lock.json registra el SHA y versión v2.0.0 del portafolio', () {
       final Map<String, dynamic> lock =
           jsonDecode(
                 File('lib/core/contracts/source-lock.json').readAsStringSync(),
               )
               as Map<String, dynamic>;
       expect(lock['sourceRepo'], 'ilianavsc/tg-robot-ucab-portfolio');
+      expect(lock['sourceCommit'], '934490fe29b6876f7ac20a9528015a2c3961ccb1');
+      expect(lock['contractVersion'], '2.0.0');
+      expect(lock['schemaVersion'], '2.0.0');
+      expect(RobotMqttContract.version, '2.0.0');
+      expect(RobotMqttContract.schemaVersion, '2.0.0');
       expect(lock['contractVersion'], RobotMqttContract.version);
+      expect(lock['schemaVersion'], RobotMqttContract.schemaVersion);
       expect(
         RegExp(r'^[0-9a-f]{40}$').hasMatch(lock['sourceCommit'] as String),
         isTrue,
       );
+    });
+
+    test('Capa 3 v2.0.0: 7 tópicos nuevos, 10+5 estados, MPU-6050 y bloqueo', () {
+      expect(RobotMqttContract.topicosCapa3.length, 7);
+      expect(
+        RobotMqttContract.topicosCapa3['rutas_estado'],
+        'ucab-tg-sf/robot/rutas/estado',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['rutas_escaneo'],
+        'ucab-tg-sf/robot/rutas/escaneo',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['rutas_reposicionamiento'],
+        'ucab-tg-sf/robot/rutas/reposicionamiento',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['pedidos_solicitud'],
+        'ucab-tg-sf/robot/pedidos/solicitud',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['pedidos_estado'],
+        'ucab-tg-sf/robot/pedidos/estado',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['pedidos_cancelacion'],
+        'ucab-tg-sf/robot/pedidos/cancelacion',
+      );
+      expect(
+        RobotMqttContract.topicosCapa3['sensores_inercial'],
+        'ucab-tg-sf/robot/sensores/inercial',
+      );
+      expect(RobotMqttContract.estadosRuta, <String>[
+        'SIN_RUTA',
+        'ESCANEO_IDA',
+        'ESPERA_REPOSICION',
+        'ESCANEO_RETORNO',
+        'OPERACION_BUCLE',
+        'REESCANEO_PARADA',
+        'OPERACION_CON_PARADA',
+        'PAUSA_OBSTACULO',
+        'ERROR_SEGURIDAD',
+        'RECUPERACION_MANUAL',
+      ]);
+      expect(RobotMqttContract.estadosPedido, <String>[
+        'SIN_PEDIDO',
+        'SOLICITADO',
+        'EN_TRANSITO',
+        'CANCELACION_SEGURA',
+        'ENTREGADO',
+      ]);
+      expect(RobotMqttContract.alertasMpu6050, <String>[
+        'impacto',
+        'inclinacion',
+        'atascamiento',
+      ]);
+      expect(RobotMqttContract.movimientoBloqueadoEnEstados, <String>[
+        'ESPERA_REPOSICION',
+        'ERROR_SEGURIDAD',
+        'RECUPERACION_MANUAL',
+      ]);
+      expect(RobotMqttContract.camposSensoresInercial, <String>[
+        'pitch',
+        'roll',
+        'acel_g',
+        'alerta',
+        't',
+      ]);
     });
 
     test('tópicos, QoS, comandos y separación HIL vs P04 coinciden', () {
@@ -82,6 +156,10 @@ void main() {
         RobotTrackContract.terciosEquitativosPistaBM,
         <double>[3.0, 6.0, 9.0],
       );
+      final Map<String, dynamic> umbrales =
+          spec['umbrales'] as Map<String, dynamic>;
+      expect(umbrales['rssiLlegadaDbm'], RobotTrackContract.rssiLlegadaDbm);
+      expect(umbrales.containsKey('rssiLlegadadBm'), isFalse);
     });
   });
 
