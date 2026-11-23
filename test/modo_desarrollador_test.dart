@@ -379,7 +379,7 @@ void main() {
 
   group('Pistas y estaciones = specs/pista_canonica.json', () {
     final Map<String, dynamic> spec = jsonDecode(
-      File('../specs/pista_canonica.json').readAsStringSync(),
+      File('test/fixtures/pista_canonica.json').readAsStringSync(),
     ) as Map<String, dynamic>;
     final double largo = (spec['longitudTotalM'] as num).toDouble();
     final List<double> pcs = <double>[
