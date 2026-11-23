@@ -1,6 +1,9 @@
 # robot_ucab_app
 
-App móvil (Flutter) del robot de laboratorio UCAB: telemetría, pedidos y alertas por MQTT.
+App móvil y web (Flutter) del robot de laboratorio UCAB: telemetría, pedidos y alertas por MQTT.
+
+- **App en vivo:** https://ilianavsc.github.io/tg-robot-ucab-app/
+- **Portafolio, simuladores (P01–P05), firmware y documentación:** https://ilianavsc.github.io/tg-robot-ucab-portfolio/
 
 ## Diseño: Autonomous Laboratory Cockpit
 
