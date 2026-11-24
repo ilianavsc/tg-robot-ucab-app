@@ -411,6 +411,16 @@ class MqttService extends ChangeNotifier {
 
   ResultadoCapa3 completarPasadaIdaCapa3() {
     final ResultadoCapa3 r = capa3.completarPasadaIda();
+    if (r.ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'finalizar',
+        'fase': capa3.tipoRuta == TipoRutaOperacional.lineal ? 'ida' : 'bucle',
+        'escala_reloj': capa3.escalaReloj,
+        'progreso_m': capa3.progresoPasadaM,
+        't_sim_s': capa3.tiempoSimS,
+        't_restante_s': capa3.tiempoRestanteEstimadoS,
+      });
+    }
     if (!_descartado) notifyListeners();
     return r;
   }
@@ -419,7 +429,8 @@ class MqttService extends ChangeNotifier {
     final ResultadoCapa3 r = capa3.confirmarReposicionamiento();
     if (r.ok) {
       _publicarCapa3(topicoRutasReposicionamiento, <String, dynamic>{
-        'accion': 'confirmar_reposicionamiento',
+        'confirmado': true,
+        'origen': 'manual_usuario',
         'tipo_ruta': capa3.tipoRuta.clave,
       });
     }
@@ -429,6 +440,16 @@ class MqttService extends ChangeNotifier {
 
   ResultadoCapa3 completarPasadaRetornoCapa3() {
     final ResultadoCapa3 r = capa3.completarPasadaRetorno();
+    if (r.ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'finalizar',
+        'fase': 'retorno',
+        'escala_reloj': capa3.escalaReloj,
+        'progreso_m': capa3.progresoPasadaM,
+        't_sim_s': capa3.tiempoSimS,
+        't_restante_s': capa3.tiempoRestanteEstimadoS,
+      });
+    }
     if (!_descartado) notifyListeners();
     return r;
   }
@@ -453,6 +474,16 @@ class MqttService extends ChangeNotifier {
 
   ResultadoCapa3 completarReescaneoParadaCapa3() {
     final ResultadoCapa3 r = capa3.completarReescaneoParada();
+    if (r.ok) {
+      _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
+        'accion': 'finalizar',
+        'fase': 'bucle',
+        'escala_reloj': capa3.escalaReloj,
+        'progreso_m': capa3.progresoPasadaM,
+        't_sim_s': capa3.tiempoSimS,
+        't_restante_s': capa3.tiempoRestanteEstimadoS,
+      });
+    }
     if (!_descartado) notifyListeners();
     return r;
   }

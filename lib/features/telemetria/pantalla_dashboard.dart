@@ -11,6 +11,7 @@ import '../../core/mqtt/mqtt_service.dart';
 import '../../core/operacion/capa3_operacional.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../auth/catalogo_pistas.dart';
+import '../auth/pantalla_escaneo_pista.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
 import 'conexion_cockpit.dart';
@@ -1342,7 +1343,7 @@ class _TarjetaOperacionCapa3 extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Alerta inercial MPU-6050: ${c.alertaMpu?.etiqueta ?? "Seguridad activa"}',
+                          'Alerta de estabilidad: ${c.alertaMpu?.etiqueta ?? "Seguridad activa"}',
                           style: CockpitText.labelMd.copyWith(
                             color: CockpitColors.hazard,
                           ),
@@ -1439,10 +1440,37 @@ class _TarjetaOperacionCapa3 extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
+          _IndicadorEstabilidad(lectura: c.ultimaLecturaInercial),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
+              OutlinedButton.icon(
+                key: const Key('capa3-abrir-escaneo'),
+                onPressed: () {
+                  final CatalogoPistas? catalogo =
+                      context.read<CatalogoPistas?>();
+                  if (catalogo == null) return;
+                  final PistaLocal? activa = catalogo.activa;
+                  final String pistaId =
+                      activa?.id ??
+                      (catalogo.pistas.isNotEmpty
+                          ? catalogo.pistas.first.id
+                          : '');
+                  if (pistaId.isEmpty) return;
+                  Navigator.of(context).push<bool>(
+                    MaterialPageRoute<bool>(
+                      builder: (_) => PantallaEscaneoPista(
+                        catalogo: catalogo,
+                        pistaId: pistaId,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.radar),
+                label: const Text('Escaneo de ruta'),
+              ),
               FilledButton.icon(
                 key: const Key('capa3-solicitar-pedido'),
                 onPressed: c.puedeSolicitarPedido
@@ -1519,6 +1547,96 @@ class _TarjetaOperacionCapa3 extends StatelessWidget {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Indicador compacto de **Estabilidad del robot** (`pitch`, `roll` y `g`)
+/// alimentado desde `sensores/inercial`, sin exponer jerga técnica al Operador.
+class _IndicadorEstabilidad extends StatelessWidget {
+  const _IndicadorEstabilidad({required this.lectura});
+
+  final LecturaInercial? lectura;
+
+  @override
+  Widget build(BuildContext context) {
+    final LecturaInercial? l = lectura;
+    final bool alerta = l?.alerta != null;
+    return Container(
+      key: const Key('capa3-estabilidad'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: CockpitColors.surfaceLowest,
+        borderRadius: BorderRadius.circular(CockpitRadius.md),
+        border: Border.all(
+          color: alerta
+              ? CockpitColors.hazard.withValues(alpha: 0.65)
+              : CockpitColors.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.balance_outlined,
+                size: 16,
+                color: alerta ? CockpitColors.hazard : CockpitColors.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Estabilidad del robot',
+                  style: CockpitText.labelMd.copyWith(
+                    color: CockpitColors.onSurface,
+                  ),
+                ),
+              ),
+              Text(
+                l == null
+                    ? 'Sin lectura'
+                    : (alerta ? l.alerta!.etiqueta : 'Estable'),
+                style: CockpitText.telemetrySm.copyWith(
+                  color: alerta
+                      ? CockpitColors.hazard
+                      : (l == null
+                            ? CockpitColors.outline
+                            : CockpitColors.ok),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: <Widget>[
+              Text(
+                'Pitch: ${l == null ? '—' : '${l.pitch.toStringAsFixed(1)}°'}',
+                key: const Key('capa3-estabilidad-pitch'),
+                style: CockpitText.telemetrySm.copyWith(
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Roll: ${l == null ? '—' : '${l.roll.toStringAsFixed(1)}°'}',
+                key: const Key('capa3-estabilidad-roll'),
+                style: CockpitText.telemetrySm.copyWith(
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Acel.: ${l == null ? '—' : '${l.acelG.toStringAsFixed(2)} g'}',
+                key: const Key('capa3-estabilidad-acel'),
+                style: CockpitText.telemetrySm.copyWith(
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

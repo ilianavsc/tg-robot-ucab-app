@@ -526,5 +526,70 @@ void main() {
       expect(svc.capa3.estadoRuta, EstadoRutaOperacional.escaneoRetorno);
       expect(svc.capa3.puedeMover, isTrue);
     });
+
+    test('Brecha 1: completar escaneo publica accion "finalizar" en rutas/escaneo con trazabilidad', () {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+
+      svc.configurarTipoRutaCapa3(TipoRutaOperacional.cerrada);
+      svc.configurarParadaCapa3('Estación 1');
+      expect(svc.iniciarEscaneoCapa3().ok, isTrue);
+      expect(svc.completarPasadaIdaCapa3().ok, isTrue);
+
+      expect(svc.ultimoTopicoCapa3, RobotMqttContract.topicoRutasEscaneo);
+      final Map<String, dynamic>? payload = svc.ultimoPayloadCapa3;
+      expect(payload, isNotNull);
+      expect(payload!['accion'], 'finalizar');
+      expect(payload['message_id'], isA<String>());
+      expect(payload['sequence'], isA<int>());
+      expect(payload['timestamp'], isA<int>());
+      expect(payload['schema_version'], RobotMqttContract.schemaVersion);
+    });
+
+    testWidgets('Brecha 2: Dashboard muestra Estabilidad del robot (pitch/roll/g sin jerga MPU-6050) y acceso a Escaneo de ruta', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+      svc.debugProcesarSensoresInercial(jsonEncode(<String, dynamic>{
+        'pitch': 2.5,
+        'roll': -1.2,
+        'acel_g': 1.01,
+        'alerta': null,
+        'timestamp': 9000,
+        'schema_version': '2.0.0',
+      }));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<MqttService>.value(value: svc),
+            ChangeNotifierProvider<SolicitudActiva>(
+              create: (_) => SolicitudActiva(),
+            ),
+            ChangeNotifierProvider<CatalogoPistas>(
+              create: (_) => CatalogoPistas(),
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: const Scaffold(body: PantallaDashboard(tecnico: false)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('capa3-estabilidad')),
+        200,
+      );
+      expect(find.byKey(const Key('capa3-estabilidad')), findsOneWidget);
+      expect(find.text('Estabilidad del robot'), findsOneWidget);
+      expect(find.text('Pitch: 2.5°'), findsOneWidget);
+      expect(find.text('Roll: -1.2°'), findsOneWidget);
+      expect(find.text('Acel.: 1.01 g'), findsOneWidget);
+      expect(find.byKey(const Key('capa3-abrir-escaneo')), findsOneWidget);
+      // Cero jerga técnica en vista Operador
+      expect(find.textContaining('MPU-6050'), findsNothing);
+      expect(find.textContaining('MQTT'), findsNothing);
+    });
   });
 }
