@@ -15,10 +15,8 @@ import '../auth/pantalla_escaneo_pista.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
 import 'conexion_cockpit.dart';
-import 'formulario_solicitud.dart';
 import 'mapa_pista.dart';
 import 'radar_hud.dart';
-import 'solicitud_activa.dart';
 import 'telemetria_screen.dart';
 
 /// **Dashboard**: estado del robot, enlace MQTT, energía 3S, línea (4×
@@ -40,7 +38,6 @@ class PantallaDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MqttService servicio = context.watch<MqttService>();
-    final SolicitudActiva solicitud = context.watch<SolicitudActiva>();
     final bool circuitoCerrado = TelemetriaScreen.esCircuitoCerrado(context);
     final PistaLocal? pistaActiva = context.watch<CatalogoPistas?>()?.activa;
     final Estado? e = servicio.ultimoEstado;
@@ -54,11 +51,10 @@ class PantallaDashboard extends StatelessWidget {
         children: <Widget>[
           const TarjetaMapaPista(tecnico: false),
           const SizedBox(height: 12),
-          if (circuitoCerrado)
-            _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
-          else
-            _TarjetaPedido(servicio: servicio, solicitud: solicitud),
-          const SizedBox(height: 12),
+          if (circuitoCerrado) ...<Widget>[
+            _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+            const SizedBox(height: 12),
+          ],
           _TarjetaOperacionCapa3(servicio: servicio, tecnico: false),
         ],
       );
@@ -75,12 +71,11 @@ class PantallaDashboard extends StatelessWidget {
         // Vista principal: Mapa de Pista con misión, destinos y pausa.
         const TarjetaMapaPista(),
         const SizedBox(height: 12),
-        // En circuito cerrado (0 torres): recorrido completo; con >= 1 torre: pedido.
-        if (circuitoCerrado)
-          _TarjetaRecorrido(servicio: servicio, pista: pistaActiva)
-        else
-          _TarjetaPedido(servicio: servicio, solicitud: solicitud),
-        const SizedBox(height: 12),
+        // En circuito cerrado (0 torres): recorrido completo; pedidos unificados en Capa 3.
+        if (circuitoCerrado) ...<Widget>[
+          _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+          const SizedBox(height: 12),
+        ],
         _TarjetaOperacionCapa3(servicio: servicio, tecnico: true),
         const SizedBox(height: 12),
         CockpitColumnas(
@@ -268,91 +263,6 @@ class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
             onPressed: enCurso ? null : () => _iniciar(context),
             icon: Icon(enCurso ? Icons.sync : Icons.play_arrow_rounded),
             label: Text(enCurso ? 'Recorrido en curso' : 'Iniciar recorrido'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Tarjeta del flujo de pedido: "Nueva solicitud" cuando no hay misión, o
-/// "Misión activa" (componente, destino y estado) con "Confirmar entrega".
-class _TarjetaPedido extends StatelessWidget {
-  const _TarjetaPedido({required this.servicio, required this.solicitud});
-
-  final MqttService servicio;
-  final SolicitudActiva solicitud;
-
-  void _abrirFormulario(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext _) => FormularioSolicitud(
-        servicio: servicio,
-        solicitud: solicitud,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (solicitud.haySolicitud) {
-      return CockpitCard(
-        borde: CockpitColors.primary.withValues(alpha: 0.45),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const SectionLabel(
-              icono: Icons.local_shipping_outlined,
-              etiqueta: 'Misión activa',
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '${solicitud.componente} → ${solicitud.destino}',
-              style: CockpitText.titleMd.copyWith(
-                color: CockpitColors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Estado: ${solicitud.estado.etiqueta}',
-              style: CockpitText.bodyMd.copyWith(
-                color: CockpitColors.primary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const Key('confirmar-entrega'),
-              onPressed: () {
-                solicitud.confirmarEntrega();
-                enviarOrden(context, servicio, 'frenar');
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    const SnackBar(content: Text('Entrega confirmada.')),
-                  );
-              },
-              icon: const Icon(Icons.task_alt),
-              label: const Text('Confirmar entrega'),
-            ),
-          ],
-        ),
-      );
-    }
-    return CockpitCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const SectionLabel(
-            icono: Icons.inventory_2_outlined,
-            etiqueta: 'Pedido',
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            key: const Key('nueva-solicitud'),
-            onPressed: () => _abrirFormulario(context),
-            icon: const Icon(Icons.add),
-            label: const Text('Nueva solicitud'),
           ),
         ],
       ),

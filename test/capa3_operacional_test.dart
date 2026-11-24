@@ -672,5 +672,113 @@ void main() {
       expect(c.estadoRuta, EstadoRutaOperacional.sinRuta);
       expect(c.alertaMpu, isNull);
     });
+
+    testWidgets('UI unificada: Dashboard expone un único botón/flujo "Solicitar pedido" sin _TarjetaPedido duplicada', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      svc.iniciarSimulacion();
+      addTearDown(svc.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<MqttService>.value(value: svc),
+            ChangeNotifierProvider<CatalogoPistas>(
+              create: (_) => CatalogoPistas(),
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: const Scaffold(body: PantallaDashboard(tecnico: false)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
+      expect(find.byKey(const Key('confirmar-entrega')), findsNothing);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('capa3-solicitar-pedido')),
+        200,
+      );
+      expect(find.text('Solicitar pedido'), findsOneWidget);
+      expect(find.byKey(const Key('capa3-solicitar-pedido')), findsOneWidget);
+      svc.detenerSimulacion();
+    });
+
+    testWidgets('Geometría sincronizada: alternar Ruta Cerrada <-> Ruta Lineal reconstruye la geometría visual de la pista', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+      final CatalogoPistas catalogo = CatalogoPistas();
+      final PistaLocal p = catalogo.agregarPista(
+        nombre: 'Pista Sync Geom',
+        longitudM: 9.0,
+        geometria: TipoGeometriaPista.circuitoCerrado,
+      )!;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<MqttService>.value(
+          value: svc,
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: PantallaEscaneoPista(
+              catalogo: catalogo,
+              pistaId: p.id,
+              velocidadReproduccion: 1,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Inicialmente en Ruta Cerrada -> Circuito cerrado
+      final Finder scroll = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('escaneo-datos')),
+        200,
+        scrollable: scroll,
+      );
+      expect(
+        find.text(TipoGeometriaPista.circuitoCerrado.etiqueta),
+        findsOneWidget,
+      );
+      expect(find.text(TipoGeometriaPista.lineal.etiqueta), findsNothing);
+
+      // Alternar a Ruta Lineal -> reconstruye geometría visual a lineal
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('escaneo-tipo-lineal')),
+        -200,
+        scrollable: scroll,
+      );
+      await tester.tap(find.byKey(const Key('escaneo-tipo-lineal')));
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('escaneo-datos')),
+        200,
+        scrollable: scroll,
+      );
+      expect(find.text(TipoGeometriaPista.lineal.etiqueta), findsOneWidget);
+      expect(
+        find.text(TipoGeometriaPista.circuitoCerrado.etiqueta),
+        findsNothing,
+      );
+
+      // Volver a Ruta Cerrada -> vuelve a Circuito cerrado
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('escaneo-tipo-cerrada')),
+        -200,
+        scrollable: scroll,
+      );
+      await tester.tap(find.byKey(const Key('escaneo-tipo-cerrada')));
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('escaneo-datos')),
+        200,
+        scrollable: scroll,
+      );
+      expect(
+        find.text(TipoGeometriaPista.circuitoCerrado.etiqueta),
+        findsOneWidget,
+      );
+    });
   });
 }

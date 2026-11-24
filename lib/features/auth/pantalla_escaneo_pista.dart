@@ -35,7 +35,7 @@ class PantallaEscaneoPista extends StatefulWidget {
 
 class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     with SingleTickerProviderStateMixin {
-  late final EscaneoPista _escaneo;
+  late EscaneoPista _escaneo;
   late final MqttService _servicio;
   late final TextEditingController _paradaCtrl;
   late final Ticker _ticker;
@@ -102,6 +102,23 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
 
   void _cambiarTipoRuta(TipoRutaOperacional tipo) {
     setState(() {
+      final TipoGeometriaPista nuevaGeom = tipo == TipoRutaOperacional.lineal
+          ? TipoGeometriaPista.lineal
+          : TipoGeometriaPista.circuitoCerrado;
+      if (_escaneo.geometria != nuevaGeom) {
+        final double largo = _pista?.longitudM ?? 9.0;
+        _escaneo.dispose();
+        _escaneo = EscaneoPista(
+          pistaId: widget.pistaId,
+          largoEstimadoM: largo,
+          geometria: nuevaGeom,
+        );
+        _guardada = false;
+        if (!_ticker.isActive) {
+          _ultimo = Duration.zero;
+          _ticker.start();
+        }
+      }
       _servicio.configurarTipoRutaCapa3(tipo);
       _servicio.configurarParadaCapa3(_paradaCtrl.text);
       if (tipo == TipoRutaOperacional.lineal && !_capa3.paradaConfigurada) {
@@ -677,7 +694,10 @@ class _PintorEscaneo extends CustomPainter {
 
   @override
   bool shouldRepaint(_PintorEscaneo old) =>
-      old._pos != _pos || old._etapa != _etapa || !_iguales(old._seg, _seg);
+      old.e.geometria != e.geometria ||
+      old._pos != _pos ||
+      old._etapa != _etapa ||
+      !_iguales(old._seg, _seg);
 
   static bool _iguales(List<bool> a, List<bool> b) {
     for (int i = 0; i < a.length; i++) {

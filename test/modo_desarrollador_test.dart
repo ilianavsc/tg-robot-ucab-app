@@ -247,11 +247,8 @@ void main() {
         await t.pump(const Duration(milliseconds: 100));
         await _entrar(t, admin: false);
         expect(find.byKey(const Key('iniciar-recorrido')), findsNothing);
-        expect(find.byKey(const Key('nueva-solicitud')), findsOneWidget);
-        await t.tap(find.byKey(const Key('nueva-solicitud')));
-        await t.pump();
-        await t.pump(const Duration(milliseconds: 400));
-        expect(find.byKey(const Key('enviar-solicitud')), findsOneWidget);
+        expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
+        expect(find.byKey(const Key('capa3-solicitar-pedido')), findsOneWidget);
         await _cerrar(t, e);
       },
     );

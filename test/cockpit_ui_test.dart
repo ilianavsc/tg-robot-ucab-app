@@ -278,46 +278,37 @@ void main() {
   );
 
   testWidgets(
-    'Solicitud y Cierre: crea un pedido y confirma la entrega',
+    'Solicitud y Cierre: flujo unificado Capa 3 solicita pedido y marca entregado sin tarjeta duplicada',
     (WidgetTester t) async {
       final MqttService s = await _montar(t);
       s.iniciarSimulacion();
       await t.pump(const Duration(milliseconds: 200));
 
-      // 1) "Nueva solicitud" abre el formulario.
-      final Finder nueva = find.byKey(const Key('nueva-solicitud'));
-      await t.scrollUntilVisible(
-        nueva,
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await t.tap(nueva);
-      await t.pump(const Duration(milliseconds: 400));
-
-      // 2) Elige componente y destino, y envía.
-      expect(find.byKey(const Key('enviar-solicitud')), findsOneWidget);
-      await _tocar(t, 'Cables / Multímetro');
-      await _tocar(t, 'LABORATORIO 1');
-      await _tocar(t, 'Enviar solicitud');
-      await t.pump(const Duration(milliseconds: 400));
-
-      // 3) La hoja cerró, la solicitud se creó y la misión aparece.
-      expect(find.text('Componente'), findsNothing);
+      // Sin tarjeta duplicada _TarjetaPedido
       expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
-      final Finder confirmar = find.byKey(const Key('confirmar-entrega'));
+      expect(find.byKey(const Key('confirmar-entrega')), findsNothing);
+
+      // 1) "Solicitar pedido" en _TarjetaOperacionCapa3 inicia pedido EN_TRANSITO.
+      final Finder solicitar = find.byKey(const Key('capa3-solicitar-pedido'));
       await t.scrollUntilVisible(
-        confirmar,
-        300,
+        solicitar,
+        200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('MISIÓN ACTIVA'), findsOneWidget);
-      expect(find.text('Cables / Multímetro → LABORATORIO 1'), findsOneWidget);
+      await Scrollable.ensureVisible(t.element(solicitar), alignment: 0.5);
+      await t.pump();
+      expect(find.text('Solicitar pedido'), findsOneWidget);
+      await t.tap(solicitar);
+      await t.pump(const Duration(milliseconds: 200));
 
-      // 4) Confirmar entrega cierra el ciclo (la misión y su botón desaparecen).
-      await t.tap(confirmar);
-      await t.pump(const Duration(milliseconds: 400));
-      expect(find.text('MISIÓN ACTIVA'), findsNothing);
-      expect(find.byKey(const Key('confirmar-entrega')), findsNothing);
+      // 2) Aparece "Marcar entregado" y cierra el ciclo.
+      final Finder entregar = find.byKey(const Key('capa3-entregar-pedido'));
+      expect(entregar, findsOneWidget);
+      await Scrollable.ensureVisible(t.element(entregar), alignment: 0.5);
+      await t.pump();
+      await t.tap(entregar);
+      await t.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('capa3-entregar-pedido')), findsNothing);
 
       expect(t.takeException(), isNull);
       await _cerrar(t, s);
