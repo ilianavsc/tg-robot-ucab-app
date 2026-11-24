@@ -567,6 +567,10 @@ class Capa3OperacionalController {
       _tipoRuta = TipoRutaOperacional.desdeClave(json['tipo_ruta'] as String);
     }
     _estadoRuta = nuevoEstado;
+    if (nuevoEstado != EstadoRutaOperacional.errorSeguridad &&
+        nuevoEstado != EstadoRutaOperacional.recuperacionManual) {
+      _alertaMpu = null;
+    }
     if (json['parada_configurada'] is bool) {
       _paradaConfigurada = json['parada_configurada'] as bool;
     }
@@ -609,7 +613,8 @@ class Capa3OperacionalController {
   void procesarSensoresInercialJson(Map<String, dynamic> json) {
     final LecturaInercial lectura = LecturaInercial.fromJson(json);
     _ultimaLecturaInercial = lectura;
-    if (lectura.alerta != null) {
+    if (lectura.alerta != null &&
+        _estadoRuta != EstadoRutaOperacional.recuperacionManual) {
       dispararAlertaMpu6050(lectura.alerta!);
     }
   }

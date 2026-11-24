@@ -591,5 +591,86 @@ void main() {
       expect(find.textContaining('MPU-6050'), findsNothing);
       expect(find.textContaining('MQTT'), findsNothing);
     });
+
+    testWidgets('Brecha #1: abrir PantallaEscaneoPista publica "iniciar_escaneo" en rutas/escaneo con trazabilidad', (WidgetTester tester) async {
+      final MqttService svc = MqttService();
+      addTearDown(svc.dispose);
+      final CatalogoPistas catalogo = CatalogoPistas();
+      final PistaLocal p = catalogo.agregarPista(
+        nombre: 'Pista Sync E2E',
+        longitudM: 9.0,
+        geometria: TipoGeometriaPista.circuitoCerrado,
+      )!;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<MqttService>.value(
+          value: svc,
+          child: MaterialApp(
+            theme: buildCockpitTheme(),
+            home: PantallaEscaneoPista(
+              catalogo: catalogo,
+              pistaId: p.id,
+              velocidadReproduccion: 1,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(svc.ultimoTopicoCapa3, RobotMqttContract.topicoRutasEscaneo);
+      final Map<String, dynamic>? payload = svc.ultimoPayloadCapa3;
+      expect(payload, isNotNull);
+      expect(payload!['accion'], 'iniciar_escaneo');
+      expect(payload['message_id'], isA<String>());
+      expect(payload['sequence'], isA<int>());
+      expect(payload['timestamp'], isA<int>());
+      expect(payload['schema_version'], RobotMqttContract.schemaVersion);
+    });
+
+    test('Brecha #3: procesarRutasEstadoJson limpia _alertaMpu al recuperar ruta hacia OPERACION_CON_PARADA o SIN_RUTA', () {
+      final Capa3OperacionalController c = Capa3OperacionalController(
+        tipoRuta: TipoRutaOperacional.cerrada,
+        largoM: 9.0,
+        paradaConfigurada: true,
+        paradaNombre: 'Estación 1',
+      );
+      c.dispararAlertaMpu6050(AlertaMpu6050.impacto);
+      expect(c.estadoRuta, EstadoRutaOperacional.errorSeguridad);
+      expect(c.alertaMpu, AlertaMpu6050.impacto);
+
+      // Mientras entra en RECUPERACION_MANUAL mantiene la alerta asociada al evento
+      expect(
+        c.procesarRutasEstadoJson(<String, dynamic>{
+          'estado_ruta': 'RECUPERACION_MANUAL',
+          'timestamp': 1000,
+        }),
+        isTrue,
+      );
+      expect(c.alertaMpu, AlertaMpu6050.impacto);
+
+      // Al recuperar a OPERACION_CON_PARADA limpia _alertaMpu = null (quita el banner)
+      expect(
+        c.procesarRutasEstadoJson(<String, dynamic>{
+          'estado_ruta': 'OPERACION_CON_PARADA',
+          'parada_configurada': true,
+          'timestamp': 2000,
+        }),
+        isTrue,
+      );
+      expect(c.estadoRuta, EstadoRutaOperacional.operacionConParada);
+      expect(c.alertaMpu, isNull);
+
+      // También limpia al volver a SIN_RUTA
+      c.dispararAlertaMpu6050(AlertaMpu6050.inclinacion);
+      expect(
+        c.procesarRutasEstadoJson(<String, dynamic>{
+          'estado_ruta': 'SIN_RUTA',
+          'timestamp': 3000,
+        }),
+        isTrue,
+      );
+      expect(c.estadoRuta, EstadoRutaOperacional.sinRuta);
+      expect(c.alertaMpu, isNull);
+    });
   });
 }

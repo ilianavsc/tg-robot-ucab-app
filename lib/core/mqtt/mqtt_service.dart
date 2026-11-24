@@ -395,7 +395,7 @@ class MqttService extends ChangeNotifier {
     notifyListeners();
   }
 
-  ResultadoCapa3 iniciarEscaneoCapa3() {
+  ResultadoCapa3 iniciarEscaneoCapa3({bool notificar = true}) {
     final ResultadoCapa3 r = capa3.iniciarEscaneo();
     if (r.ok) {
       _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
@@ -405,7 +405,7 @@ class MqttService extends ChangeNotifier {
         'parada_nombre': capa3.paradaNombre,
       });
     }
-    if (!_descartado) notifyListeners();
+    if (notificar && !_descartado) notifyListeners();
     return r;
   }
 
@@ -415,6 +415,7 @@ class MqttService extends ChangeNotifier {
       _publicarCapa3(topicoRutasEscaneo, <String, dynamic>{
         'accion': 'finalizar',
         'fase': capa3.tipoRuta == TipoRutaOperacional.lineal ? 'ida' : 'bucle',
+        'parada_configurada': capa3.paradaConfigurada,
         'escala_reloj': capa3.escalaReloj,
         'progreso_m': capa3.progresoPasadaM,
         't_sim_s': capa3.tiempoSimS,

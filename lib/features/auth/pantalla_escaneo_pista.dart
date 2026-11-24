@@ -62,13 +62,14 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
     final bool esLineal = geom == TipoGeometriaPista.lineal;
     final String paradaInicial = esLineal ? 'Estación 1' : '';
     _paradaCtrl = TextEditingController(text: paradaInicial);
-    // Inicializa sobre la única instancia compartida en MqttService.
+    // Inicializa sobre la única instancia compartida en MqttService y publica
+    // `iniciar_escaneo` en `rutas/escaneo` para sincronizar P04/robot.
     _capa3.setLargoM(largo);
     _capa3.setTipoRuta(
       esLineal ? TipoRutaOperacional.lineal : TipoRutaOperacional.cerrada,
     );
     _capa3.configurarParada(paradaInicial);
-    _capa3.iniciarEscaneo();
+    _servicio.iniciarEscaneoCapa3(notificar: false);
     _ticker = createTicker(_tick)..start();
   }
 
@@ -121,6 +122,9 @@ class _PantallaEscaneoPistaState extends State<PantallaEscaneoPista>
             'Parada obligatoria en Ruta Lineal para iniciar el doble escaneo.';
       } else {
         _errorValidacionParada = null;
+        if (ok && _capa3.estadoRuta == EstadoRutaOperacional.escaneoIda) {
+          _servicio.iniciarEscaneoCapa3();
+        }
       }
     });
   }
