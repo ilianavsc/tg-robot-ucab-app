@@ -89,6 +89,9 @@ Future<void> _entrarCon(
   String clave, {
   bool admin = false,
 }) async {
+  if (find.byKey(const Key('login-usuario')).evaluate().isEmpty) {
+    await _tocar(t, find.byKey(const Key('login-abrir')));
+  }
   if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
     await _tocar(t, find.byKey(const Key('login-pistas')));
     await _tocar(t, find.byKey(const Key('pista-item-A')));
@@ -314,7 +317,8 @@ void main() {
         expect(e.sesion.rol, RolUsuario.administrador);
         await _abrirGestion(t);
         expect(find.byType(PantallaGestionUsuarios), findsOneWidget);
-        expect(find.textContaining('No hay registro público'), findsOneWidget);
+        expect(find.textContaining('Solo puedes crear usuarios estándar (User)'), findsOneWidget);
+        expect(find.byKey(const Key('usuarios-rol')), findsNothing);
         // Cuenta 00 (admin) y 01 (user) ya registradas por defecto
         await _bajarUsuarios(t, find.byKey(const Key('cuenta-user')));
         expect(find.text('00 · @admin'), findsOneWidget);
@@ -323,7 +327,7 @@ void main() {
         await _crear(t, nombre: 'Ana Pérez', usuario: 'Ana', clave: 'ana123');
         expect(
           t.widget<Text>(find.byKey(const Key('usuarios-mensaje'))).data,
-          'Operador @ana creado.',
+          'User @ana creado.',
         );
         await _bajarUsuarios(t, find.byKey(const Key('cuenta-ana')));
         expect(find.byKey(const Key('cuenta-ana')), findsOneWidget);
@@ -341,7 +345,7 @@ void main() {
 
         await _cerrarSesion(t);
         expect(e.sesion.activa, isFalse);
-        expect(find.text('Iniciar Sesión'), findsOneWidget);
+        expect(find.byKey(const Key('login-abrir')), findsOneWidget);
 
         // La cuenta nueva entra como Operador
         await _entrarCon(t, 'ana', 'ana123');
@@ -349,7 +353,7 @@ void main() {
         expect(e.sesion.usuario, 'ana');
         expect(e.sesion.nombre, 'Ana Pérez');
         await _tocar(t, find.byKey(const Key('boton-perfil')));
-        expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
+        expect(find.text('PERFIL · USER'), findsOneWidget);
         expect(find.text('Ana Pérez'), findsOneWidget);
         expect(find.text('@ana'), findsOneWidget);
         // y no ve nada de Administrador
@@ -414,7 +418,7 @@ void main() {
         expect(e.registro.buscar('luis'), isNull);
         expect(
           t.widget<Text>(find.byKey(const Key('usuarios-mensaje'))).data,
-          'Operador @luis eliminado.',
+          'Cuenta @luis eliminada.',
         );
 
         await _cerrarSesion(t);

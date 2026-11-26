@@ -252,8 +252,8 @@ void main() {
     'Dashboard: el Mapa de Pista abre la vista con la misión del demo',
     (WidgetTester t) async {
       final MqttService s = await _montar(t, demo: true);
-      // 4 pestañas intactas y mapa como primera tarjeta
-      expect(find.byType(NavigationDestination), findsNWidgets(4));
+      // 5 pestañas (incl. DATOS) y mapa como primera tarjeta
+      expect(find.byType(NavigationDestination), findsNWidgets(5));
       expect(find.text('MAPA DE PISTA'), findsOneWidget);
       expect(find.byKey(const Key('mapa-pista-lienzo')), findsOneWidget);
       expect(find.text('EN RUTA → PUNTO DE CONTROL'), findsOneWidget);

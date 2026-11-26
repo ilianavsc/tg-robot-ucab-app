@@ -96,6 +96,9 @@ Future<void> _entrarCon(
   String c, {
   bool admin = false,
 }) async {
+  if (find.byKey(const Key('login-usuario')).evaluate().isEmpty) {
+    await _tocar(t, find.byKey(const Key('login-abrir')));
+  }
   if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
     await _tocar(t, find.byKey(const Key('login-pistas')));
     await _tocar(t, find.byKey(const Key('pista-item-A')));
@@ -405,6 +408,9 @@ void main() {
         e.ruta.avanzar(7.5); // 5 m
         e.ruta.finalizarYGuardar(admin);
         await _entrarCon(t, 'user', 'user');
+        // Operación real: el mapa se enciende al establecer la conexión
+        e.servicio.debugMarcarConectado();
+        await t.pump();
         final CustomPaint lienzo = t.widget<CustomPaint>(
           find.byKey(const Key('mapa-pista-lienzo')),
         );

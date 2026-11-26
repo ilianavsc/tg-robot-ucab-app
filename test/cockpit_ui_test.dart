@@ -101,16 +101,17 @@ Future<void> _tocar(WidgetTester t, String texto) async {
 void main() {
   setUpAll(_cargarFuentes);
 
-  testWidgets('barra de navegación con las 4 secciones y Freno Remoto', (
+  testWidgets('barra de navegación con las 5 secciones (incl. DATOS) y Freno Remoto', (
     WidgetTester t,
   ) async {
     final MqttService s = await _montar(t);
-    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    expect(find.byType(NavigationDestination), findsNWidgets(5));
     for (final String n in <String>[
       'DASHBOARD',
       'CONTROLES',
       'RADAR',
       'ALERTAS',
+      'DATOS',
     ]) {
       expect(
         find.descendant(of: find.byType(NavigationBar), matching: find.text(n)),

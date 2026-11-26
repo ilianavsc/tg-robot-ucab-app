@@ -305,10 +305,12 @@ void main() {
 
   group('Sistema de Diseño Oscuro (cockpit_theme.dart)', () {
     test('tokens de superficie, acento, radios y tabular-nums alineados', () {
-      expect(CockpitColors.surface, const Color(0xFF10141A));
-      expect(CockpitColors.surfaceLow, const Color(0xFF181C22));
-      expect(CockpitColors.onSurface, const Color(0xFFDFE2EB));
-      expect(CockpitColors.primary, const Color(0xFF00F2FE));
+      expect(CockpitColors.surface, const Color(0xFF0B0F19));
+      expect(CockpitColors.surfaceLow, const Color(0xFF111827));
+      expect(CockpitColors.outlineVariant, const Color(0xFF1E293B));
+      expect(CockpitColors.primaryDim, const Color(0xFF06B6D4));
+      expect(CockpitColors.onSurface, const Color(0xFFE5E7EB));
+      expect(CockpitColors.primary, const Color(0xFF2DD4BF));
       expect(CockpitColors.borderSubtle, const Color(0x14FFFFFF));
       expect(CockpitRadius.sm, 4);
       expect(CockpitRadius.md, 8);

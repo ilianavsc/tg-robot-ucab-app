@@ -8,6 +8,7 @@ import 'package:robot_ucab_app/core/mqtt/mqtt_service.dart';
 import 'package:robot_ucab_app/core/theme/cockpit_theme.dart';
 import 'package:robot_ucab_app/features/auth/catalogo_pistas.dart';
 import 'package:robot_ucab_app/features/auth/escaneo_pista.dart';
+import 'package:robot_ucab_app/features/auth/pantalla_login.dart';
 import 'package:robot_ucab_app/features/auth/registro_usuarios.dart';
 import 'package:robot_ucab_app/features/auth/sesion_local.dart';
 import 'package:robot_ucab_app/features/perfil/aprendizaje_ruta.dart';
@@ -106,13 +107,22 @@ Future<void> _tocar(WidgetTester t, Finder f) async {
   await t.pump(const Duration(milliseconds: 400));
 }
 
-/// Selecciona Pista A si aún no hay pista activa, elige rol, escribe credenciales y pulsa "Iniciar Sesión".
+/// Despliega la tarjeta colapsable del Login si aún está plegada.
+Future<void> _abrirLogin(WidgetTester t) async {
+  if (find.byKey(const Key('login-usuario')).evaluate().isEmpty) {
+    await _tocar(t, find.byKey(const Key('login-abrir')));
+  }
+}
+
+/// Abre el Login, selecciona Pista A si no hay pista activa, elige rol,
+/// escribe credenciales y pulsa "Iniciar Sesión".
 Future<void> _entrarCon(
   WidgetTester t,
   String usuario,
   String clave, {
   bool admin = false,
 }) async {
+  await _abrirLogin(t);
   if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
     await _tocar(t, find.byKey(const Key('login-pistas')));
     await _tocar(t, find.byKey(const Key('pista-item-A')));
@@ -194,25 +204,42 @@ void main() {
 
   group('Login', () {
     testWidgets(
-      'muestra marca, selector deslizante de rol, botón Demo en esquina, sin Acceso rápido y MQTT real',
+      'inicio: solo 3 botones (Pistas, Login colapsable, Demo) y Pista A predeterminada',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
         expect(find.text('Autonomous Laboratory AGV'), findsOneWidget);
+        // Exactamente 3 botones principales
+        expect(find.byType(BotonInicio), findsNWidgets(3));
+        expect(find.byKey(const Key('login-pistas')), findsOneWidget);
+        expect(find.byKey(const Key('login-abrir')), findsOneWidget);
+        expect(find.byKey(const Key('login-demo')), findsOneWidget);
+        expect(find.text('Pistas'), findsOneWidget);
+        expect(find.text('Login'), findsOneWidget);
+        expect(find.text('Demo'), findsOneWidget);
+        // Pista A ya viene seleccionada
+        expect(e.catalogo.activaId, 'A');
+        expect(find.textContaining('Pista A'), findsOneWidget);
+        // Tarjeta de Login plegada: sin formulario ni nada de MQTT
+        expect(find.byKey(const Key('login-tarjeta')), findsNothing);
+        expect(find.byKey(const Key('login-usuario')), findsNothing);
+        expect(find.textContaining('MQTT'), findsNothing);
+        expect(find.byType(PastillaMqtt), findsNothing);
+        expect(find.byKey(const Key('login-acceso-rapido')), findsNothing);
+        // Desplegar: aparece el formulario con la pista de ingreso
+        await _tocar(t, find.byKey(const Key('login-abrir')));
+        expect(find.byKey(const Key('login-tarjeta')), findsOneWidget);
         expect(find.byKey(const Key('login-selector-rol')), findsOneWidget);
         expect(find.byKey(const Key('rol-operador')), findsOneWidget);
         expect(find.byKey(const Key('rol-administrador')), findsOneWidget);
+        expect(find.text('User'), findsOneWidget);
+        expect(find.text('Admin'), findsOneWidget);
         expect(find.text('USUARIO'), findsOneWidget);
         expect(find.text('CONTRASEÑA'), findsOneWidget);
         expect(find.text('Iniciar Sesión'), findsOneWidget);
-        expect(find.byKey(const Key('login-demo')), findsOneWidget);
-        expect(find.text('Demo'), findsOneWidget);
-        expect(find.text('Modo Demo (Offline)'), findsNothing);
-        // Sin Acceso rápido ni modal
-        expect(find.byKey(const Key('login-acceso-rapido')), findsNothing);
-        expect(find.text('Acceso rápido'), findsNothing);
-        expect(find.byKey(const Key('acceso-operador')), findsNothing);
-        expect(find.byKey(const Key('acceso-admin')), findsNothing);
-        expect(find.byKey(const Key('login-aviso-local')), findsNothing);
+        expect(
+          t.widget<Text>(find.byKey(const Key('login-pista-activa'))).data,
+          startsWith('Ingresando a: Pista A'),
+        );
         // Placeholder dinámico según rol
         TextField campoUsuario() =>
             t.widget<TextField>(find.byKey(const Key('login-usuario')));
@@ -224,7 +251,10 @@ void main() {
         // Sin registro público
         expect(find.textContaining('Registrarse'), findsNothing);
         expect(find.textContaining('Crear cuenta'), findsNothing);
-        expect(find.text('MQTT: Desconectado (--)'), findsOneWidget);
+        // Plegar de nuevo
+        await _tocar(t, find.byKey(const Key('login-abrir')));
+        await t.pumpAndSettle();
+        expect(find.byKey(const Key('login-usuario')), findsNothing);
         expect(find.byType(NavigationBar), findsNothing);
         expect(t.takeException(), isNull);
         await _cerrar(t, e);
@@ -277,7 +307,7 @@ void main() {
       await _entrarCon(t, 'user', 'user', admin: true);
       expect(e.sesion.activa, isFalse);
       expect(
-        find.text('Esta cuenta corresponde al perfil Operador.'),
+        find.text('Esta cuenta corresponde al perfil Usuario.'),
         findsOneWidget,
       );
       await _cerrar(t, e);
@@ -305,6 +335,7 @@ void main() {
       WidgetTester t,
     ) async {
       final _Entorno e = await _montar(t);
+      await _abrirLogin(t);
       TextField clave() =>
           t.widget<TextField>(find.byKey(const Key('login-clave')));
       expect(clave().obscureText, isTrue);
@@ -314,13 +345,16 @@ void main() {
     });
 
     testWidgets(
-      'Modo Demo (Offline) entra como Operador y arranca la simulación',
+      'Demo entra como Admin (Demo) sobre la Pista C y arranca la simulación',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
         await _tocar(t, find.byKey(const Key('login-demo')));
         expect(e.servicio.simulando, isTrue);
-        expect(e.sesion.rol, RolUsuario.operador);
+        expect(e.sesion.rol, RolUsuario.administrador);
+        expect(e.sesion.nombre, 'Admin (Demo)');
         expect(e.sesion.demo, isTrue);
+        expect(e.catalogo.activaId, 'C');
+        expect(e.servicio.pista!.longitudM, largoPistaCM);
         expect(
           find.text('MODO DEMO · datos simulados, sin red ni robot'),
           findsOneWidget,
@@ -340,9 +374,10 @@ void main() {
     test('CatalogoPistas inicia con Pista A configurada; una pista nueva nace básica (0 torres) y pendiente', () {
       final CatalogoPistas c = CatalogoPistas();
       expect(c.pistas.map((PistaLocal p) => p.id), <String>['A']);
-      expect(c.activa, isNull);
-      expect(c.tienePistaActiva, isFalse);
-      expect(c.activaConfigurada, isFalse);
+      // Pista A viene predeterminada
+      expect(c.activaId, 'A');
+      expect(c.tienePistaActiva, isTrue);
+      expect(c.activaConfigurada, isTrue);
       expect(c.seleccionar('B'), isFalse);
       expect(c.seleccionar('A'), isTrue);
       expect(c.activaId, 'A');
@@ -384,42 +419,70 @@ void main() {
 
     test('puedeIniciarSesion: Operador exige configurada; Admin entra con cualquier activa', () {
       final CatalogoPistas c = CatalogoPistas();
-      // Sin pista activa: nadie puede entrar.
-      expect(c.puedeIniciarSesion(RolUsuario.operador), isFalse);
-      expect(c.puedeIniciarSesion(RolUsuario.administrador), isFalse);
-      // Pista A (configurada): ambos pueden.
-      c.seleccionar('A');
+      // Pista A (predeterminada y configurada): ambos pueden.
       expect(c.puedeIniciarSesion(RolUsuario.operador), isTrue);
       expect(c.puedeIniciarSesion(RolUsuario.administrador), isTrue);
       // Pista nueva (pendiente): solo el Administrador.
       c.agregarPista(nombre: 'Lab 2', longitudM: 12.5);
       expect(c.puedeIniciarSesion(RolUsuario.operador), isFalse);
       expect(c.puedeIniciarSesion(RolUsuario.administrador), isTrue);
+      // Sin pista seleccionada: nadie puede entrar.
+      c.eliminarPista(c.activaId!);
+      c.eliminarPista('A');
+      expect(c.tienePistaActiva, isFalse);
+      expect(c.puedeIniciarSesion(RolUsuario.operador), isFalse);
+      expect(c.puedeIniciarSesion(RolUsuario.administrador), isFalse);
       c.dispose();
     });
 
     testWidgets(
-      'sin pista no se puede entrar; con Pista A (configurada) el Operador inicia sesión',
+      'sin pista seleccionada se bloquea el login (User y Admin) con aviso; con Pista A el User entra',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        expect(find.byKey(const Key('login-pistas')), findsOneWidget);
-        expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
-        expect(
-          t
-              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
-              .onPressed,
-          isNull,
-        );
+        // El gestor de pistas lista la Pista A (activa)
         await _tocar(t, find.byKey(const Key('login-pistas')));
+        expect(find.byKey(const Key('pistas-hoja')), findsOneWidget);
         expect(find.byKey(const Key('pista-item-A')), findsOneWidget);
         expect(find.byKey(const Key('pista-tipo-A')), findsOneWidget);
         expect(find.text('Circuito cerrado'), findsOneWidget);
         expect(find.byKey(const Key('pista-item-B')), findsNothing);
         expect(find.byKey(const Key('pista-pendiente-A')), findsNothing);
         expect(find.byKey(const Key('pista-nueva')), findsOneWidget);
-        await _tocar(t, find.byKey(const Key('pista-item-A')));
+        // Se quita la selección eliminando la única pista
+        await _tocar(t, find.byKey(const Key('pista-eliminar-A')));
+        await _tocar(t, find.byKey(const Key('pista-eliminar-confirmar')));
+        expect(e.catalogo.tienePistaActiva, isFalse);
+        expect(find.text('Sin pista seleccionada'), findsOneWidget);
+        await _abrirLogin(t);
+        expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
+        expect(find.text(avisoSinPista), findsOneWidget);
+        for (final (String u, bool adm) in <(String, bool)>[
+          ('user', false),
+          ('admin', true),
+        ]) {
+          await _tocar(
+            t,
+            find.byKey(Key(adm ? 'rol-administrador' : 'rol-operador')),
+          );
+          await t.enterText(find.byKey(const Key('login-usuario')), u);
+          await t.enterText(find.byKey(const Key('login-clave')), u);
+          await _tocar(t, find.byKey(const Key('login-entrar')));
+          expect(e.sesion.activa, isFalse, reason: u);
+          // El aviso se repite como error del formulario
+          expect(find.text(avisoSinPista), findsNWidgets(2));
+        }
+        // Con una pista seleccionada el login funciona
+        e.catalogo.agregarPista(nombre: 'Pista Z', longitudM: 5);
+        e.catalogo.completarEscaneo(
+          e.catalogo.activaId!,
+          MetricasPista(
+            largoM: 5,
+            puntosControlM: puntosControlEquitativos(5),
+            segmentosValidados: const <bool>[true, true, true],
+          ),
+        );
+        await t.pump();
         expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
-        expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
         await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
         expect(e.sesion.rol, RolUsuario.operador);
@@ -427,6 +490,22 @@ void main() {
         await _cerrar(t, e);
       },
     );
+
+    testWidgets('seleccionar una pista desde Pistas la deja activa en el estado', (
+      WidgetTester t,
+    ) async {
+      final _Entorno e = await _montar(t);
+      e.catalogo.agregarPista(nombre: 'Pista B', longitudM: 9);
+      await t.pump();
+      expect(e.catalogo.activaId, 'P1');
+      await _tocar(t, find.byKey(const Key('login-pistas')));
+      await _tocar(t, find.byKey(const Key('pista-item-A')));
+      expect(e.catalogo.activaId, 'A');
+      expect(find.text('Activa: Pista A · Circuito histórico'), findsOneWidget);
+      expect(find.byKey(const Key('pistas-hoja')), findsNothing);
+      expect(t.takeException(), isNull);
+      await _cerrar(t, e);
+    });
 
     testWidgets(
       '+ Nueva pista nace pendiente y bloquea al Operador hasta completar el escaneo',
@@ -452,22 +531,21 @@ void main() {
         expect(find.text('Pasillo Norte'), findsOneWidget);
         await t.pump(const Duration(milliseconds: 500));
         await _tocar(t, find.byKey(const Key('escaneo-salir')));
-        // De vuelta en Login: pista pendiente, Operador bloqueado
+        // De vuelta en Login: pista pendiente, User bloqueado
+        await _abrirLogin(t);
         expect(find.byKey(const Key('login-aviso-pendiente')), findsOneWidget);
         expect(
           find.byKey(const Key('login-continuar-escaneo')),
           findsOneWidget,
         );
         expect(find.byKey(const Key('login-pista-activa')), findsNothing);
-        expect(
-          t
-              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
-              .onPressed,
-          isNull,
-        );
+        // Un User no puede entrar con la pista pendiente
+        await _entrarCon(t, 'user', 'user');
+        expect(e.sesion.activa, isFalse);
+        expect(find.textContaining('pendiente de escaneo: un User'), findsOneWidget);
         await _tocar(t, find.byKey(const Key('login-pistas')));
         expect(find.byKey(const Key('pista-pendiente-P1')), findsOneWidget);
-        await t.tapAt(const Offset(380, 800)); // cierra el menú
+        await t.tapAt(const Offset(20, 20)); // cierra la hoja de pistas
         await t.pump(const Duration(milliseconds: 400));
         expect(e.sesion.activa, isFalse);
         expect(t.takeException(), isNull);
@@ -525,15 +603,10 @@ void main() {
         await _tocar(t, find.byKey(const Key('escaneo-listo')));
         await t.pumpAndSettle();
         expect(find.byKey(const Key('escaneo-lienzo')), findsNothing);
+        await _abrirLogin(t);
         expect(find.byKey(const Key('login-aviso-pendiente')), findsNothing);
         expect(find.byKey(const Key('login-pista-activa')), findsOneWidget);
-        expect(find.textContaining('Laboratorio 2'), findsOneWidget);
-        expect(
-          t
-              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
-              .onPressed,
-          isNotNull,
-        );
+        expect(find.textContaining('Ingresando a: Laboratorio 2'), findsOneWidget);
         await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
         expect(t.takeException(), isNull);
@@ -585,6 +658,10 @@ void main() {
         await _tocar(t, find.byKey(const Key('escaneo-listo')));
         await _entrarCon(t, 'user', 'user');
         expect(e.sesion.activa, isTrue);
+        // Operación real: el mini-mapa se enciende al establecer la conexión
+        expect(find.byKey(const Key('mapa-apagado')), findsOneWidget);
+        e.servicio.debugMarcarConectado();
+        await t.pump();
 
         // El mapa principal dibuja la ruta lineal con checkpoints equitativos
         final CustomPaint lienzo = t.widget<CustomPaint>(
@@ -619,19 +696,10 @@ void main() {
     );
 
     testWidgets(
-      'eliminar una pista desde ☰ Pistas la remueve y bloquea el login si era la activa',
+      'eliminar una pista desde Pistas la remueve y bloquea el login si era la activa',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        // Selecciona Pista A -> habilita Iniciar Sesión
-        await _tocar(t, find.byKey(const Key('login-pistas')));
-        await _tocar(t, find.byKey(const Key('pista-item-A')));
-        expect(
-          t
-              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
-              .onPressed,
-          isNotNull,
-        );
-        // Abre ☰ Pistas y pulsa papelera de Pista A -> diálogo de confirmación
+        // Abre Pistas y pulsa papelera de Pista A -> diálogo de confirmación
         await _tocar(t, find.byKey(const Key('login-pistas')));
         await _tocar(t, find.byKey(const Key('pista-eliminar-A')));
         expect(
@@ -639,14 +707,13 @@ void main() {
           findsOneWidget,
         );
         await _tocar(t, find.byKey(const Key('pista-eliminar-confirmar')));
-        // Pista eliminada, selección limpia y login bloqueado nuevamente
+        // Pista eliminada, selección limpia y login bloqueado
+        await _abrirLogin(t);
         expect(find.byKey(const Key('login-aviso-pista')), findsOneWidget);
-        expect(
-          t
-              .widget<FilledButton>(find.byKey(const Key('login-entrar')))
-              .onPressed,
-          isNull,
-        );
+        await t.enterText(find.byKey(const Key('login-usuario')), 'user');
+        await t.enterText(find.byKey(const Key('login-clave')), 'user');
+        await _tocar(t, find.byKey(const Key('login-entrar')));
+        expect(e.sesion.activa, isFalse);
         await _tocar(t, find.byKey(const Key('login-pistas')));
         expect(find.byKey(const Key('pista-item-A')), findsNothing);
         expect(t.takeException(), isNull);
@@ -664,9 +731,9 @@ void main() {
       // Vista limpia: sin las pestañas técnicas
       expect(find.byType(NavigationDestination), findsNothing);
       await _abrirPerfil(t);
-      expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
+      expect(find.text('PERFIL · USER'), findsOneWidget);
       expect(find.text('@user'), findsOneWidget);
-      expect(find.text('Operador'), findsWidgets);
+      expect(find.text('Usuario'), findsWidgets);
       expect(find.byKey(const Key('perfil-cerrar')), findsOneWidget);
       // Sin información de tipo de conexión ni telemetría técnica para Operador
       expect(find.text('SESIÓN ACTUAL'), findsNothing);
@@ -692,7 +759,7 @@ void main() {
       await _tocar(t, find.byKey(const Key('perfil-cerrar')));
       await t.pump(const Duration(milliseconds: 400)); // termina el pop
       expect(e.sesion.activa, isFalse);
-      expect(find.text('Iniciar Sesión'), findsOneWidget);
+      expect(find.byKey(const Key('login-abrir')), findsOneWidget);
       expect(find.byType(PantallaPerfil), findsNothing);
       await _cerrar(t, e);
     });
@@ -709,6 +776,9 @@ void main() {
       expect(e.servicio.simulando, isFalse);
       expect(e.sesion.activa, isFalse);
       expect(find.byKey(const Key('login-demo')), findsOneWidget);
+      // La Pista C de la Demo se retira y vuelve la Pista A
+      expect(e.catalogo.porId('C'), isNull);
+      expect(e.catalogo.activaId, 'A');
       await _cerrar(t, e);
     });
   });

@@ -101,7 +101,16 @@ Future<void> _tocar(WidgetTester t, Finder f) async {
   await t.pump(const Duration(milliseconds: 400));
 }
 
-Future<void> _entrar(WidgetTester t, {required bool admin}) async {
+/// Abre el Login, entra (User o Admin) y, por defecto, establece la conexión
+/// (operación real: sin ella el mini-mapa permanece apagado).
+Future<void> _entrar(
+  WidgetTester t, {
+  required bool admin,
+  bool conectar = true,
+}) async {
+  if (find.byKey(const Key('login-usuario')).evaluate().isEmpty) {
+    await _tocar(t, find.byKey(const Key('login-abrir')));
+  }
   if (find.byKey(const Key('login-aviso-pista')).evaluate().isNotEmpty) {
     await _tocar(t, find.byKey(const Key('login-pistas')));
     await _tocar(t, find.byKey(const Key('pista-item-A')));
@@ -114,6 +123,12 @@ Future<void> _entrar(WidgetTester t, {required bool admin}) async {
   await t.enterText(find.byKey(const Key('login-usuario')), u);
   await t.enterText(find.byKey(const Key('login-clave')), u);
   await _tocar(t, find.byKey(const Key('login-entrar')));
+  if (conectar) {
+    t.state<State>(find.byType(MaterialApp)).context
+        .read<MqttService>()
+        .debugMarcarConectado();
+    await t.pump();
+  }
 }
 
 /// Solo el mapa y la acción de recorrido (circuito cerrado, 0 torres); nada de
@@ -134,15 +149,20 @@ void _esperaVistaLimpia() {
   expect(find.byType(FrenoRemotoButton), findsNothing);
   expect(find.byKey(const Key('destino-lab1')), findsNothing);
   expect(find.byKey(const Key('mapa-pausa')), findsNothing);
-  // Tipo / selector de conexión y telemetría avanzada
-  expect(find.byKey(const Key('boton-conexion')), findsNothing);
+  // La Conexión está siempre visible al iniciar sesión (sin Modo Desarrollador)
+  expect(find.byKey(const Key('boton-conexion')), findsOneWidget);
+  expect(find.byKey(const Key('seccion-conexion')), findsOneWidget);
+  // Telemetría avanzada oculta
   expect(find.text('Detalle técnico'), findsNothing);
+  expect(find.byKey(const Key('consola-sensores')), findsNothing);
+  expect(find.byKey(const Key('historial-datos')), findsNothing);
 }
 
 void _esperaVistaTecnica() {
   expect(find.byKey(const Key('vista-limpia')), findsNothing);
-  expect(find.byType(NavigationDestination), findsNWidgets(4));
+  expect(find.byType(NavigationDestination), findsNWidgets(5));
   expect(find.text('CONTROLES'), findsOneWidget);
+  expect(find.text('DATOS'), findsOneWidget);
   expect(find.byType(FrenoRemotoButton), findsOneWidget);
   expect(find.byKey(const Key('boton-conexion')), findsOneWidget);
 }
@@ -206,14 +226,14 @@ void main() {
     });
 
     testWidgets(
-      'Iniciar recorrido en circuito cerrado (0 torres) arranca vuelta completa sin entregas',
+      'Iniciar recorrido (0 torres, Demo) arranca vuelta completa simulada sin entregas',
       (WidgetTester t) async {
         final _Entorno e = await _montar(t);
-        await _entrar(t, admin: false);
+        // La vuelta simulada local solo existe en Demo; en la operación real
+        // el recorrido se envía al robot por la conexión establecida.
+        await _tocar(t, find.byKey(const Key('login-demo')));
         expect(find.byKey(const Key('nueva-solicitud')), findsNothing);
-        await t.tap(find.byKey(const Key('iniciar-recorrido')));
-        await t.pump();
-        await t.pump(const Duration(milliseconds: 300));
+        await _tocar(t, find.byKey(const Key('iniciar-recorrido')));
         expect(e.servicio.simulando, isTrue);
         expect(e.servicio.pista!.modoVueltaCompleta, isTrue);
         expect(e.servicio.pista!.vueltaEnCurso, isTrue);
@@ -259,7 +279,7 @@ void main() {
       final _Entorno e = await _montar(t);
       await _entrar(t, admin: false);
       await _tocar(t, find.byKey(const Key('boton-perfil')));
-      expect(find.text('PERFIL · OPERADOR'), findsOneWidget);
+      expect(find.text('PERFIL · USER'), findsOneWidget);
       await t.scrollUntilVisible(
         find.byKey(const Key('perfil-cerrar')),
         300,
