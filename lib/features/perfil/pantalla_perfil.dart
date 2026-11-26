@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/mqtt/mqtt_service.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../../shared/widgets/pastilla_mqtt.dart';
+import '../auth/catalogo_pistas.dart';
 import '../auth/sesion_local.dart';
 import '../telemetria/cockpit_ui.dart';
 import 'perfil_admin.dart';
@@ -16,8 +17,19 @@ void cerrarSesionLocal(BuildContext context) {
   final MqttService servicio = context.read<MqttService>();
   final SesionLocal sesion = context.read<SesionLocal>();
   final NavigatorState navegador = Navigator.of(context);
+  CatalogoPistas? catalogo;
+  try {
+    catalogo = context.read<CatalogoPistas>();
+  } on ProviderNotFoundException {
+    catalogo = null;
+  }
   if (servicio.simulando) servicio.detenerSimulacion();
+  // Fuera de la Demo no se deja ninguna conexión abierta sin sesión.
+  if (!sesion.demo && servicio.conexion != EstadoConexion.desconectado) {
+    servicio.desconectar();
+  }
   navegador.popUntil((Route<dynamic> r) => r.isFirst);
+  if (sesion.demo) catalogo?.salirDeDemo();
   sesion.cerrar();
 }
 
@@ -96,6 +108,11 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
             children: <Widget>[
               CabeceraIdentidad(sesion: sesion, rol: rol),
               const SizedBox(height: 16),
+              // Solo en Demo: cambiar en vivo entre Admin (Demo) y User (Demo).
+              if (sesion.demo) ...<Widget>[
+                InterruptorCuentaDemo(sesion: sesion),
+                const SizedBox(height: 12),
+              ],
               if (admin) ...<Widget>[
                 if (dev) ...<Widget>[
                   const TarjetaFailSafe(),
@@ -110,8 +127,11 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
               if (admin && dev) ...<Widget>[
                 TarjetaSesionActual(sesion: sesion, servicio: servicio),
                 const SizedBox(height: 12),
-                TarjetaEnlaceMqtt(servicio: servicio),
-                const SizedBox(height: 16),
+                // En Demo no hay nada relacionado con la conexión.
+                if (!sesion.demo) ...<Widget>[
+                  TarjetaEnlaceMqtt(servicio: servicio),
+                  const SizedBox(height: 16),
+                ],
               ] else
                 const SizedBox(height: 4),
               OutlinedButton.icon(
@@ -141,6 +161,81 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Interruptor **solo de la Demo** para cambiar en vivo entre la cuenta
+/// `Admin (Demo)` y `User (Demo)`: permite probar cómo un usuario estándar
+/// configura un pedido/solicitud.
+class InterruptorCuentaDemo extends StatelessWidget {
+  const InterruptorCuentaDemo({super.key, required this.sesion});
+
+  final SesionLocal sesion;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool admin = sesion.demoAdmin;
+    return CockpitCard(
+      key: const Key('perfil-cuenta-demo'),
+      borde: CockpitColors.secondary.withValues(alpha: 0.45),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.swap_horiz,
+            size: 20,
+            color: CockpitColors.secondary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'Cuenta de la Demo',
+                  style: CockpitText.labelMd.copyWith(
+                    color: CockpitColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  admin
+                      ? SesionLocal.nombreAdminDemo
+                      : SesionLocal.nombreUserDemo,
+                  key: const Key('perfil-cuenta-demo-texto'),
+                  style: CockpitText.bodySm.copyWith(
+                    color: CockpitColors.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            'User',
+            style: CockpitText.telemetrySm.copyWith(
+              color: admin
+                  ? CockpitColors.onSurfaceVariant
+                  : CockpitColors.onSurface,
+            ),
+          ),
+          Switch(
+            key: const Key('perfil-demo-admin'),
+            value: admin,
+            onChanged: (bool v) => sesion.cambiarCuentaDemo(admin: v),
+          ),
+          Text(
+            'Admin',
+            style: CockpitText.telemetrySm.copyWith(
+              color: admin
+                  ? CockpitColors.onSurface
+                  : CockpitColors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
     );
   }
@@ -216,9 +311,7 @@ class CabeceraIdentidad extends StatelessWidget {
             border: Border.all(color: acento.withValues(alpha: 0.7), width: 2),
           ),
           child: Icon(
-            admin
-                ? Icons.admin_panel_settings_outlined
-                : Icons.engineering_outlined,
+            admin ? Icons.admin_panel_settings_outlined : Icons.person_outline,
             size: 40,
             color: acento,
           ),
@@ -269,7 +362,9 @@ class CabeceraIdentidad extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          'Cuenta local de demostración · sin servidor',
+          sesion.demo
+              ? 'Cuenta de la Demo · sin conexión'
+              : 'Cuenta local · sin servidor',
           style: CockpitText.bodySm.copyWith(color: CockpitColors.outline),
         ),
       ],

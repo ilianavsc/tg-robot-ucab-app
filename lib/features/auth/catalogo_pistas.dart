@@ -126,9 +126,7 @@ class PerfilSeccion {
       hastaM: hastaM,
       tiempoEstimadoS: avg(tiempoEstimadoS, tiempoS),
       velocidadRefMs: avg(velocidadRefMs, velocidadMs),
-      paredFijaCm: paredValida
-          ? avg(paredFijaCm, lecturaParedCm)
-          : paredFijaCm,
+      paredFijaCm: paredValida ? avg(paredFijaCm, lecturaParedCm) : paredFijaCm,
       margenObstaculoCm: margenObstaculoCm,
       muestrasViajes: n,
     );
@@ -187,9 +185,12 @@ class MetricasPista {
   /// Porcentaje de la vuelta con la cinta vista por los 4 TCRT5000.
   final double lineaVistaPct;
 
+  /// `true` si todos los segmentos quedaron validados. Las pistas escaneadas
+  /// tienen 3 segmentos (`PC1`–`PC3`); la **Pista C** de la Demo es lineal con
+  /// 2 segmentos (`PC1`, `PC2 / META`).
   bool get completa =>
-      puntosControlM.length == 3 &&
-      segmentosValidados.length == 3 &&
+      puntosControlM.length >= 2 &&
+      segmentosValidados.length == puntosControlM.length &&
       segmentosValidados.every((bool v) => v);
 
   /// Devuelve el [PerfilSeccion] correspondiente a [posicionM] sobre la pista.
@@ -322,12 +323,63 @@ class PistaLocal {
   );
 }
 
-/// Catálogo local en memoria de pistas seleccionables desde el Login.
+/// Id de la pista lineal de la Demo.
+const String idPistaDemo = 'C';
+
+/// Largo de la **Pista C** de la Demo (m): lineal, 2 segmentos de 3,0 m.
+const double largoPistaCM = 6.0;
+
+/// **Pista C** · pista lineal de la Demo con **2 segmentos**
+/// (`Inicio → PC1` y `PC1 → PC2 / META`), ya configurada.
+PistaLocal pistaDemoC() {
+  const double mitad = largoPistaCM / 2;
+  return const PistaLocal(
+    id: idPistaDemo,
+    nombre: 'Pista C · Lineal demo',
+    longitudM: largoPistaCM,
+    geometria: TipoGeometriaPista.lineal,
+    base: true,
+    estado: EstadoPista.configurada,
+    metricas: MetricasPista(
+      largoM: largoPistaCM,
+      puntosControlM: <double>[mitad, largoPistaCM],
+      segmentosValidados: <bool>[true, true],
+      lecturasPorSegmento: <int>[3, 3],
+      giroTotalGrados: 0,
+      perfilesSeccion: <PerfilSeccion>[
+        PerfilSeccion(
+          indice: 0,
+          nombre: 'Segmento 1 (Inicio → PC1)',
+          desdeM: 0,
+          hastaM: mitad,
+          tiempoEstimadoS: 7.3,
+          velocidadRefMs: 0.41,
+          paredFijaCm: 150.0,
+        ),
+        PerfilSeccion(
+          indice: 1,
+          nombre: 'Segmento 2 (PC1 → META)',
+          desdeM: mitad,
+          hastaM: largoPistaCM,
+          tiempoEstimadoS: 7.3,
+          velocidadRefMs: 0.41,
+          paredFijaCm: 150.0,
+        ),
+      ],
+      firmaParedesCm: <double>[150.0, 150.0],
+    ),
+  );
+}
+
+/// Catálogo local en memoria de pistas seleccionables desde la pantalla de
+/// inicio (botón **Pistas**).
 ///
 /// Arranca con `Pista A (8,05 m)` **configurada** (simula una pista que ya pasó
-/// por el escaneo completo y la verificación de sus 3 segmentos) y sin pista
-/// seleccionada (`activa == null`). Las pistas nuevas nacen en modo básico
-/// (`torresControl = 0`) y **pendientes** hasta completar su escaneo.
+/// por el escaneo completo y la verificación de sus 3 segmentos) y ya
+/// **seleccionada como predeterminada** (`activaId == 'A'`). Las pistas nuevas
+/// nacen en modo básico (`torresControl = 0`) y **pendientes** hasta completar
+/// su escaneo. La Demo carga la **Pista C** (lineal, 2 segmentos) con
+/// [cargarPistaDemo] y la retira con [salirDeDemo].
 class CatalogoPistas extends ChangeNotifier {
   CatalogoPistas() {
     final List<double> pcsA = puntosControlPara(8.05);
@@ -375,11 +427,44 @@ class CatalogoPistas extends ChangeNotifier {
         ),
       ),
     );
+    _activaId = 'A';
   }
 
   final List<PistaLocal> _pistas = <PistaLocal>[];
   String? _activaId;
   int _contador = 1;
+
+  /// Pista seleccionada antes de entrar a la Demo (se restaura al salir).
+  String? _activaAntesDeDemo;
+  bool _enDemo = false;
+
+  /// `true` mientras la Demo tiene cargada la Pista C.
+  bool get enDemo => _enDemo;
+
+  /// Carga la **Pista C** (lineal, 2 segmentos) y la deja activa. Guarda la
+  /// selección previa para restaurarla con [salirDeDemo].
+  PistaLocal cargarPistaDemo() {
+    if (!_enDemo) {
+      _activaAntesDeDemo = _activaId;
+      _enDemo = true;
+    }
+    final int i = _pistas.indexWhere((PistaLocal p) => p.id == idPistaDemo);
+    if (i < 0) _pistas.add(pistaDemoC());
+    _activaId = idPistaDemo;
+    notifyListeners();
+    return porId(idPistaDemo)!;
+  }
+
+  /// Retira la Pista C de la Demo y restaura la pista seleccionada antes.
+  void salirDeDemo() {
+    if (!_enDemo) return;
+    _enDemo = false;
+    _pistas.removeWhere((PistaLocal p) => p.id == idPistaDemo);
+    final String? previa = _activaAntesDeDemo;
+    _activaAntesDeDemo = null;
+    _activaId = (previa != null && porId(previa) != null) ? previa : null;
+    notifyListeners();
+  }
 
   List<PistaLocal> get pistas => List<PistaLocal>.unmodifiable(_pistas);
   String? get activaId => _activaId;

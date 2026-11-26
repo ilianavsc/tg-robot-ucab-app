@@ -12,6 +12,9 @@ import '../../core/operacion/capa3_operacional.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../auth/catalogo_pistas.dart';
 import '../auth/pantalla_escaneo_pista.dart';
+import '../auth/sesion_local.dart';
+import '../conexion/acceso_operacion.dart';
+import '../conexion/tarjeta_conexion.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
 import 'conexion_cockpit.dart';
@@ -43,19 +46,29 @@ class PantallaDashboard extends StatelessWidget {
     final Estado? e = servicio.ultimoEstado;
     final Ultrasonido? u = servicio.ultimoUltrasonido;
     final bool sin = estadoSinSenal(e);
+    final bool demo = sesionEsDemo(context);
+    // Operación real: sin conexión establecida no hay nada operativo.
+    final bool habilitada = operacionHabilitada(context);
+    final bool conSesion = context.watch<SesionLocal?>()?.activa ?? false;
 
     if (!tecnico) {
       return ListView(
         key: const Key('vista-limpia'),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: <Widget>[
-          const TarjetaMapaPista(tecnico: false),
-          const SizedBox(height: 12),
-          if (circuitoCerrado) ...<Widget>[
-            _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+          if (conSesion && !demo) ...<Widget>[
+            TarjetaConexion(servicio: servicio),
             const SizedBox(height: 12),
           ],
-          _TarjetaOperacionCapa3(servicio: servicio, tecnico: false),
+          const TarjetaMapaPista(tecnico: false),
+          if (habilitada) ...<Widget>[
+            const SizedBox(height: 12),
+            if (circuitoCerrado) ...<Widget>[
+              _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+              const SizedBox(height: 12),
+            ],
+            _TarjetaOperacionCapa3(servicio: servicio, tecnico: false),
+          ],
         ],
       );
     }
@@ -71,17 +84,20 @@ class PantallaDashboard extends StatelessWidget {
         // Vista principal: Mapa de Pista con misión, destinos y pausa.
         const TarjetaMapaPista(),
         const SizedBox(height: 12),
-        // En circuito cerrado (0 torres): recorrido completo; pedidos unificados en Capa 3.
-        if (circuitoCerrado) ...<Widget>[
-          _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+        if (habilitada) ...<Widget>[
+          // En circuito cerrado (0 torres): recorrido completo; pedidos unificados en Capa 3.
+          if (circuitoCerrado) ...<Widget>[
+            _TarjetaRecorrido(servicio: servicio, pista: pistaActiva),
+            const SizedBox(height: 12),
+          ],
+          _TarjetaOperacionCapa3(servicio: servicio, tecnico: true),
           const SizedBox(height: 12),
         ],
-        _TarjetaOperacionCapa3(servicio: servicio, tecnico: true),
-        const SizedBox(height: 12),
         CockpitColumnas(
           children: <Widget>[
             _TarjetaEstadoRobot(estado: e, sin: sin),
-            _TarjetaEnlace(servicio: servicio),
+            // En Demo no hay nada relacionado con la conexión.
+            if (!demo) _TarjetaEnlace(servicio: servicio),
             _TarjetaObstaculos(ultrasonido: u),
             _DetalleTecnico(estado: e, sin: sin),
           ],
@@ -133,9 +149,7 @@ class _DetalleTecnico extends StatelessWidget {
           ),
           title: Text(
             'Detalle técnico',
-            style: CockpitText.labelMd.copyWith(
-              color: CockpitColors.onSurface,
-            ),
+            style: CockpitText.labelMd.copyWith(color: CockpitColors.onSurface),
           ),
           subtitle: Text(
             'Energía · Línea · Motores',
@@ -227,9 +241,15 @@ class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
             icono: Icons.route,
             etiqueta: 'Recorrido',
             trailing: enCurso
-                ? StatusPill(texto: 'En curso · $pct%', color: CockpitColors.primary)
+                ? StatusPill(
+                    texto: 'En curso · $pct%',
+                    color: CockpitColors.primary,
+                  )
                 : (completado
-                      ? const StatusPill(texto: 'Completado', color: CockpitColors.ok)
+                      ? const StatusPill(
+                          texto: 'Completado',
+                          color: CockpitColors.ok,
+                        )
                       : null),
           ),
           const SizedBox(height: 4),
@@ -252,7 +272,7 @@ class _TarjetaRecorridoState extends State<_TarjetaRecorrido> {
           ] else if (completado) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              'Recorrido completado · meta alcanzada (PC3 / META)',
+              'Recorrido completado · meta alcanzada',
               key: const Key('recorrido-estado'),
               style: CockpitText.bodySm.copyWith(color: CockpitColors.ok),
             ),
@@ -1163,10 +1183,7 @@ class _TarjetaObstaculos extends StatelessWidget {
 /// En vista de Operador (`tecnico == false`) se mantiene libre de jerga técnica
 /// (`EN VIVO` / `DEMO`, sin exponer términos de transporte ni brokers).
 class _TarjetaOperacionCapa3 extends StatelessWidget {
-  const _TarjetaOperacionCapa3({
-    required this.servicio,
-    required this.tecnico,
-  });
+  const _TarjetaOperacionCapa3({required this.servicio, required this.tecnico});
 
   final MqttService servicio;
   final bool tecnico;
@@ -1215,7 +1232,8 @@ class _TarjetaOperacionCapa3 extends StatelessWidget {
               ),
               StatusPill(
                 texto: 'Pedido: ${c.estadoPedido.clave}',
-                color: c.estadoPedido == EstadoPedidoOperacional.cancelacionSegura
+                color:
+                    c.estadoPedido == EstadoPedidoOperacional.cancelacionSegura
                     ? CockpitColors.warning
                     : (c.estadoPedido == EstadoPedidoOperacional.enTransito
                           ? CockpitColors.ok
@@ -1359,8 +1377,8 @@ class _TarjetaOperacionCapa3 extends StatelessWidget {
               OutlinedButton.icon(
                 key: const Key('capa3-abrir-escaneo'),
                 onPressed: () {
-                  final CatalogoPistas? catalogo =
-                      context.read<CatalogoPistas?>();
+                  final CatalogoPistas? catalogo = context
+                      .read<CatalogoPistas?>();
                   if (catalogo == null) return;
                   final PistaLocal? activa = catalogo.activa;
                   final String pistaId =
@@ -1512,9 +1530,7 @@ class _IndicadorEstabilidad extends StatelessWidget {
                 style: CockpitText.telemetrySm.copyWith(
                   color: alerta
                       ? CockpitColors.hazard
-                      : (l == null
-                            ? CockpitColors.outline
-                            : CockpitColors.ok),
+                      : (l == null ? CockpitColors.outline : CockpitColors.ok),
                 ),
               ),
             ],

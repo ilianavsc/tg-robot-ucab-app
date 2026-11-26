@@ -3,17 +3,20 @@ import 'package:provider/provider.dart';
 
 import '../../core/mqtt/mqtt_service.dart';
 import '../../core/theme/cockpit_theme.dart';
-import '../../shared/widgets/pastilla_mqtt.dart';
 import '../telemetria/cockpit_ui.dart';
 import 'catalogo_pistas.dart';
 import 'pantalla_escaneo_pista.dart';
 import 'registro_usuarios.dart';
 import 'sesion_local.dart';
 
-/// Pantalla de acceso (Stitch v2). Autenticación **local, sin backend**: el
-/// usuario y la contraseña se comprueban contra `RegistroUsuarios` (memoria) y
-/// el rol sale de la cuenta, no de un selector. También ofrece el Modo Demo
-/// (Offline). No hay registro público: solo un Administrador crea operadores.
+/// Pantalla de inicio con **solo 3 botones**: **Pistas** (gestor de pistas,
+/// con la Pista A predeterminada), **Login** (tarjeta colapsable para entrar
+/// como User o Admin) y **Demo** (Admin demo sobre la Pista C, sin conexión).
+///
+/// Autenticación **local, sin backend**: usuario y contraseña se comprueban
+/// contra `RegistroUsuarios` (memoria). Fuera de la Demo no se inicia sesión
+/// sin una pista seleccionada. No hay registro público: solo un Admin crea
+/// cuentas.
 class PantallaLogin extends StatefulWidget {
   const PantallaLogin({super.key});
 
@@ -30,6 +33,8 @@ class _PantallaLoginState extends State<PantallaLogin> {
   String? _error;
 
   static const String _accionNuevaPista = '__nueva_pista__';
+  static const String _accionEliminar = '__eliminar__';
+  bool _loginAbierto = false;
 
   CatalogoPistas _catalogo(BuildContext context, {bool listen = true}) {
     try {
@@ -129,15 +134,13 @@ class _PantallaLoginState extends State<PantallaLogin> {
   void _entrar() {
     final CatalogoPistas catalogo = _catalogo(context, listen: false);
     if (!catalogo.tienePistaActiva) {
-      setState(
-        () => _error = 'Selecciona o crea una pista antes de iniciar sesión.',
-      );
+      setState(() => _error = avisoSinPista);
       return;
     }
     if (!catalogo.puedeIniciarSesion(_rolSeleccionado)) {
       setState(
         () => _error =
-            'La pista activa está pendiente de escaneo: el Operador necesita '
+            'La pista activa está pendiente de escaneo: un User necesita '
             'una pista configurada.',
       );
       return;
@@ -152,8 +155,8 @@ class _PantallaLoginState extends State<PantallaLogin> {
     }
     if (cuenta.rol != _rolSeleccionado) {
       setState(
-        () => _error =
-            'Esta cuenta corresponde al perfil ${cuenta.rol.nombre}.',
+        () =>
+            _error = 'Esta cuenta corresponde al perfil ${cuenta.rol.nombre}.',
       );
       return;
     }
@@ -164,21 +167,16 @@ class _PantallaLoginState extends State<PantallaLogin> {
     );
   }
 
-  /// Modo Demo directo: entra como el Operador de demostración y arranca la
+  /// **Demo** directa (sin credenciales ni conexión): entra como
+  /// `Admin (Demo)`, carga la **Pista C** (lineal, 2 segmentos) y arranca la
   /// telemetría simulada de `MqttService` (sin red ni robot).
   void _entrarDemo() {
-    // Simula la pista activa (8,05 m la Pista A); sin pista, la canónica.
-    context.read<MqttService>().iniciarSimulacion(
-      longitudM:
-          _catalogo(context, listen: false).activa?.longitudM ??
-          largoCanonicoM,
-    );
-    context.read<SesionLocal>().iniciar(
-      RolUsuario.operador,
-      usuario: 'user',
-      nombre: 'Operador demo',
-      demo: true,
-    );
+    final PistaLocal pistaC = _catalogo(
+      context,
+      listen: false,
+    ).cargarPistaDemo();
+    context.read<MqttService>().iniciarSimulacion(longitudM: pistaC.longitudM);
+    context.read<SesionLocal>().iniciarDemo();
   }
 
   InputDecoration _decoracion({
@@ -218,383 +216,540 @@ class _PantallaLoginState extends State<PantallaLogin> {
     ),
   );
 
+  /// Abre el **gestor de pistas**: lista de pistas (la activa marcada),
+  /// eliminar y `+ Nueva pista`. Tocar una pista la selecciona como activa.
+  Future<void> _abrirPistas(CatalogoPistas catalogo) async {
+    final String? accion = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext hoja) => _HojaPistas(catalogo: catalogo),
+    );
+    if (!mounted || accion == null) return;
+    if (accion == _accionNuevaPista) {
+      await _mostrarNuevaPista(catalogo);
+    } else if (accion.startsWith(_accionEliminar)) {
+      final PistaLocal? p = catalogo.porId(
+        accion.substring(_accionEliminar.length),
+      );
+      if (p != null) await _confirmarEliminarPista(catalogo, p);
+    } else {
+      catalogo.seleccionar(accion);
+      setState(() => _error = null);
+    }
+  }
+
+  void _alternarLogin() => setState(() {
+    _loginAbierto = !_loginAbierto;
+    _error = null;
+  });
+
   @override
   Widget build(BuildContext context) {
-    final bool esAdmin = _rolSeleccionado == RolUsuario.administrador;
     final CatalogoPistas catalogo = _catalogo(context);
+    final PistaLocal? activa = catalogo.activa;
     return Scaffold(
       body: SafeArea(
-        child: Stack(
-          children: <Widget>[
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 64, 20, 20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 40, 20, 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const _Marca(),
+                  const SizedBox(height: 32),
+                  BotonInicio(
+                    key: const Key('login-pistas'),
+                    icono: Icons.route_outlined,
+                    titulo: 'Pistas',
+                    subtitulo: activa == null
+                        ? 'Sin pista seleccionada'
+                        : 'Activa: ${activa.nombre}',
+                    colorSubtitulo: activa == null
+                        ? CockpitColors.warning
+                        : CockpitColors.primary,
+                    alPulsar: () => _abrirPistas(catalogo),
+                  ),
+                  const SizedBox(height: 12),
+                  BotonInicio(
+                    key: const Key('login-abrir'),
+                    icono: Icons.login,
+                    titulo: 'Login',
+                    subtitulo: 'User o Admin',
+                    abierto: _loginAbierto,
+                    alPulsar: _alternarLogin,
+                  ),
+                  AnimatedSize(
+                    duration: MediaQuery.of(context).disableAnimations
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: _loginAbierto
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: _tarjetaLogin(catalogo),
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                  const SizedBox(height: 12),
+                  BotonInicio(
+                    key: const Key('login-demo'),
+                    icono: Icons.science_outlined,
+                    titulo: 'Demo',
+                    subtitulo: 'Admin demo · Pista C lineal',
+                    alPulsar: _entrarDemo,
+                  ),
+                  const SizedBox(height: 32),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'Universidad Católica Andrés Bello · Ingeniería',
+                      key: const Key('login-pie'),
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      style: CockpitText.telemetrySm.copyWith(
+                        color: CockpitColors.outline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tarjeta colapsable del **Login**: pista sobre la que se ingresa, perfil
+  /// (User / Admin), usuario y contraseña.
+  Widget _tarjetaLogin(CatalogoPistas catalogo) {
+    final bool esAdmin = _rolSeleccionado == RolUsuario.administrador;
+    return CockpitCard(
+      key: const Key('login-tarjeta'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (!catalogo.tienePistaActiva)
+            _AvisoLinea(
+              clave: const Key('login-aviso-pista'),
+              icono: Icons.warning_amber_rounded,
+              color: CockpitColors.warning,
+              texto: avisoSinPista,
+            )
+          else if (!catalogo.activaConfigurada)
+            _AvisoPistaPendiente(
+              nombre: catalogo.activa!.nombre,
+              bloqueaOperador: !esAdmin,
+              alContinuar: () => _abrirEscaneo(catalogo, catalogo.activaId!),
+            )
+          else
+            _AvisoLinea(
+              clave: const Key('login-pista-activa'),
+              icono: Icons.check_circle_outline,
+              color: CockpitColors.primary,
+              texto:
+                  'Ingresando a: ${catalogo.activa!.nombre} '
+                  '(${catalogo.activa!.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m)',
+            ),
+          const SizedBox(height: 14),
+          _SelectorRol(seleccionado: _rolSeleccionado, alCambiar: _cambiarRol),
+          const SizedBox(height: 16),
+          _etiqueta('USUARIO'),
+          TextField(
+            key: const Key('login-usuario'),
+            controller: _usuario,
+            keyboardType: TextInputType.text,
+            autocorrect: false,
+            enableSuggestions: false,
+            textInputAction: TextInputAction.next,
+            style: CockpitText.bodyMd.copyWith(color: CockpitColors.onSurface),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            decoration: _decoracion(
+              icono: Icons.person_outline,
+              hint: esAdmin ? 'admin' : 'user',
+            ),
+          ),
+          const SizedBox(height: 14),
+          _etiqueta('CONTRASEÑA'),
+          TextField(
+            key: const Key('login-clave'),
+            controller: _clave,
+            obscureText: !_verClave,
+            autocorrect: false,
+            enableSuggestions: false,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _entrar(),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            style: CockpitText.bodyMd.copyWith(color: CockpitColors.onSurface),
+            decoration: _decoracion(
+              icono: Icons.lock_outline,
+              hint: '••••••••',
+              error: _error,
+              sufijo: IconButton(
+                tooltip: _verClave
+                    ? 'Ocultar contraseña'
+                    : 'Mostrar contraseña',
+                icon: Icon(
+                  _verClave
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 20,
+                  color: CockpitColors.onSurfaceVariant,
+                ),
+                onPressed: () => setState(() => _verClave = !_verClave),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Pressable(
+            child: FilledButton(
+              key: const Key('login-entrar'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                textStyle: const TextStyle(
+                  fontFamily: CockpitText.sans,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: _entrar,
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text('Iniciar Sesión'),
+                  SizedBox(width: 8),
+                  Icon(Icons.arrow_forward, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso cuando no hay pista seleccionada (bloquea el login fuera de Demo).
+const String avisoSinPista =
+    'Selecciona una pista en «Pistas» antes de iniciar sesión.';
+
+/// Botón principal de la pantalla de inicio (**Pistas**, **Login**, **Demo**).
+class BotonInicio extends StatelessWidget {
+  const BotonInicio({
+    super.key,
+    required this.icono,
+    required this.titulo,
+    required this.subtitulo,
+    required this.alPulsar,
+    this.colorSubtitulo,
+    this.abierto,
+  });
+
+  final IconData icono;
+  final String titulo;
+  final String subtitulo;
+  final Color? colorSubtitulo;
+  final VoidCallback alPulsar;
+
+  /// Solo en el botón colapsable (**Login**): estado de la tarjeta.
+  final bool? abierto;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool resaltado = abierto ?? false;
+    return Semantics(
+      button: true,
+      label: titulo,
+      expanded: abierto,
+      child: Material(
+        color: CockpitColors.surfaceLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(CockpitRadius.lg),
+          side: BorderSide(
+            color: resaltado
+                ? CockpitColors.primary.withValues(alpha: 0.7)
+                : CockpitColors.outlineVariant,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: alPulsar,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: CockpitColors.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(CockpitRadius.md),
+                    border: Border.all(
+                      color: CockpitColors.primary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Icon(icono, size: 20, color: CockpitColors.primary),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      const _Marca(),
-                      const SizedBox(height: 24),
-                      _SelectorRol(
-                        seleccionado: _rolSeleccionado,
-                        alCambiar: _cambiarRol,
-                      ),
-                      const SizedBox(height: 18),
-                      _etiqueta('USUARIO'),
-                      TextField(
-                        key: const Key('login-usuario'),
-                        controller: _usuario,
-                        keyboardType: TextInputType.text,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        textInputAction: TextInputAction.next,
-                        style: CockpitText.bodyMd.copyWith(
-                          color: CockpitColors.onSurface,
-                        ),
-                        onChanged: (_) {
-                          if (_error != null) setState(() => _error = null);
-                        },
-                        decoration: _decoracion(
-                          icono: Icons.person_outline,
-                          hint: esAdmin ? 'admin' : 'user',
+                      Text(
+                        titulo,
+                        style: CockpitText.titleMd.copyWith(
+                          color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _etiqueta('CONTRASEÑA'),
-                      TextField(
-                        key: const Key('login-clave'),
-                        controller: _clave,
-                        obscureText: !_verClave,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _entrar(),
-                        onChanged: (_) {
-                          if (_error != null) setState(() => _error = null);
-                        },
-                        style: CockpitText.bodyMd.copyWith(
-                          color: CockpitColors.onSurface,
-                        ),
-                        decoration: _decoracion(
-                          icono: Icons.lock_outline,
-                          hint: '••••••••',
-                          error: _error,
-                          sufijo: IconButton(
-                            tooltip: _verClave
-                                ? 'Ocultar contraseña'
-                                : 'Mostrar contraseña',
-                            icon: Icon(
-                              _verClave
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              size: 20,
-                              color: CockpitColors.onSurfaceVariant,
-                            ),
-                            onPressed: () =>
-                                setState(() => _verClave = !_verClave),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Pressable(
-                        child: FilledButton(
-                          key: const Key('login-entrar'),
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                            textStyle: const TextStyle(
-                              fontFamily: CockpitText.sans,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onPressed: catalogo.puedeIniciarSesion(_rolSeleccionado)
-                              ? _entrar
-                              : null,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Text('Iniciar Sesión'),
-                              SizedBox(width: 8),
-                              Icon(Icons.arrow_forward, size: 18),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (!catalogo.tienePistaActiva)
-                        Text(
-                          'Selecciona o crea una pista antes de iniciar sesión.',
-                          key: const Key('login-aviso-pista'),
-                          textAlign: TextAlign.center,
-                          style: CockpitText.bodySm.copyWith(
-                            color: CockpitColors.warning,
-                          ),
-                        )
-                      else if (!catalogo.activaConfigurada)
-                        _AvisoPistaPendiente(
-                          nombre: catalogo.activa!.nombre,
-                          bloqueaOperador: !esAdmin,
-                          alContinuar: () =>
-                              _abrirEscaneo(catalogo, catalogo.activaId!),
-                        )
-                      else
-                        Text(
-                          'Pista activa: ${catalogo.activa!.nombre} '
-                          '(${catalogo.activa!.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m)',
-                          key: const Key('login-pista-activa'),
-                          textAlign: TextAlign.center,
-                          style: CockpitText.bodySm.copyWith(
-                            color: CockpitColors.primary,
-                          ),
-                        ),
-                      const SizedBox(height: 24),
-                      const Center(child: PastillaMqtt()),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          'Universidad Católica Andrés Bello · Ingeniería',
-                          key: const Key('login-pie'),
-                          textAlign: TextAlign.center,
-                          softWrap: true,
-                          style: CockpitText.telemetrySm.copyWith(
-                            color: CockpitColors.outline,
-                          ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitulo,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CockpitText.bodySm.copyWith(
+                          color:
+                              colorSubtitulo ?? CockpitColors.onSurfaceVariant,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                if (abierto == null)
+                  const Icon(
+                    Icons.chevron_right,
+                    color: CockpitColors.onSurfaceVariant,
+                  )
+                else
+                  AnimatedRotation(
+                    turns: resaltado ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.expand_more,
+                      color: CockpitColors.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
-            Positioned(
-              top: 12,
-              left: 16,
-              child: Semantics(
-                button: true,
-                label: 'Seleccionar pista',
-                child: PopupMenuButton<String>(
-                  key: const Key('login-pistas'),
-                  tooltip: 'Seleccionar pista',
-                  offset: const Offset(0, 48),
-                  color: CockpitColors.surfaceContainer,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CockpitRadius.md),
-                    side: BorderSide(
-                      color: CockpitColors.outlineVariant.withValues(
-                        alpha: 0.6,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Línea de aviso con icono (pista activa o falta de pista).
+class _AvisoLinea extends StatelessWidget {
+  const _AvisoLinea({
+    required this.clave,
+    required this.icono,
+    required this.color,
+    required this.texto,
+  });
+
+  final Key clave;
+  final IconData icono;
+  final Color color;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(CockpitRadius.md),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icono, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              texto,
+              key: clave,
+              style: CockpitText.bodySm.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Hoja inferior del **gestor de pistas**. Devuelve el id de la pista elegida,
+/// `__nueva_pista__` o `__eliminar__<id>`.
+class _HojaPistas extends StatelessWidget {
+  const _HojaPistas({required this.catalogo});
+
+  final CatalogoPistas catalogo;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: catalogo,
+      builder: (BuildContext context, _) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              key: const Key('pistas-hoja'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const SectionLabel(
+                  icono: Icons.route_outlined,
+                  etiqueta: 'Pistas',
+                ),
+                const SizedBox(height: 10),
+                if (catalogo.pistas.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No hay pistas. Crea una nueva.',
+                      style: CockpitText.bodySm.copyWith(
+                        color: CockpitColors.onSurfaceVariant,
                       ),
                     ),
                   ),
-                  onSelected: (String valor) {
-                    if (valor == _accionNuevaPista) {
-                      _mostrarNuevaPista(catalogo);
-                    } else {
-                      catalogo.seleccionar(valor);
-                      setState(() => _error = null);
-                    }
-                  },
-                  itemBuilder: (BuildContext ctx) {
-                    final List<PopupMenuEntry<String>>
-                    items = <PopupMenuEntry<String>>[
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: <Widget>[
                       for (final PistaLocal p in catalogo.pistas)
-                        PopupMenuItem<String>(
-                          key: Key('pista-item-${p.id}'),
-                          value: p.id,
-                          child: Row(
-                            children: <Widget>[
-                              Icon(
-                                p.id == catalogo.activaId
-                                    ? Icons.check_circle
-                                    : Icons.radio_button_unchecked,
-                                size: 16,
-                                color: p.id == catalogo.activaId
-                                    ? CockpitColors.primary
-                                    : CockpitColors.outline,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    Text(
-                                      p.nombre,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: CockpitText.bodySm.copyWith(
-                                        color: p.id == catalogo.activaId
-                                            ? Colors.white
-                                            : CockpitColors.onSurface,
-                                        fontWeight: p.id == catalogo.activaId
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
-                                      ),
-                                    ),
-                                    if (p.esCircuitoCerrado)
-                                      Text(
-                                        p.geometria.etiqueta,
-                                        key: Key('pista-tipo-${p.id}'),
-                                        style: CockpitText.telemetrySm.copyWith(
-                                          fontSize: 10,
-                                          color: CockpitColors.onSurfaceVariant,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (!p.configurada) ...<Widget>[
-                                Icon(
-                                  Icons.pending_outlined,
-                                  key: Key('pista-pendiente-${p.id}'),
-                                  size: 14,
-                                  color: CockpitColors.warning,
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                              Text(
-                                p.configurada
-                                    ? '${p.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m'
-                                    : 'pendiente',
-                                style: CockpitText.telemetrySm.copyWith(
-                                  color: CockpitColors.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                key: Key('pista-eliminar-${p.id}'),
-                                tooltip: 'Eliminar pista ${p.nombre}',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 32,
-                                  minHeight: 32,
-                                ),
-                                splashRadius: 16,
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 16,
-                                  color: CockpitColors.outline,
-                                ),
-                                onPressed: () {
-                                  Navigator.of(ctx).pop();
-                                  _confirmarEliminarPista(catalogo, p);
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      const PopupMenuDivider(height: 8),
-                      PopupMenuItem<String>(
-                        key: const Key('pista-nueva'),
-                        value: _accionNuevaPista,
-                        child: Row(
-                          children: <Widget>[
-                            const Icon(
-                              Icons.add_circle_outline,
-                              size: 16,
-                              color: CockpitColors.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '+ Nueva pista',
-                              style: CockpitText.bodySm.copyWith(
-                                color: CockpitColors.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ];
-                    return items;
-                  },
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 44,
-                      minHeight: 42,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: CockpitColors.surfaceContainer.withValues(
-                        alpha: 0.85,
-                      ),
-                      shape: StadiumBorder(
-                        side: BorderSide(
-                          color: CockpitColors.outlineVariant.withValues(
-                            alpha: 0.6,
-                          ),
-                        ),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        const Icon(
-                          Icons.menu,
-                          size: 16,
-                          color: CockpitColors.primary,
-                        ),
-                        const SizedBox(width: 7),
-                        Text(
-                          'Pistas',
-                          style: CockpitText.labelMd.copyWith(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: CockpitColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                        _FilaPista(pista: p, activa: p.id == catalogo.activaId),
+                    ],
                   ),
                 ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 16,
-              child: Semantics(
-                button: true,
-                label: 'Entrar en Modo Demo (Offline)',
-                child: OutlinedButton.icon(
-                  key: const Key('login-demo'),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: CockpitColors.surfaceContainer.withValues(
-                      alpha: 0.85,
-                    ),
-                    foregroundColor: CockpitColors.onSurfaceVariant,
-                    minimumSize: const Size(44, 42),
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    shape: const StadiumBorder(),
-                    side: BorderSide(
-                      color: CockpitColors.outlineVariant.withValues(
-                        alpha: 0.6,
-                      ),
-                    ),
-                    textStyle: CockpitText.labelMd.copyWith(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onPressed: _entrarDemo,
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const Key('pista-nueva'),
+                  onPressed: () =>
+                      Navigator.of(context)
+                          .pop(_PantallaLoginState._accionNuevaPista),
                   icon: const Icon(
-                    Icons.science_outlined,
-                    size: 16,
+                    Icons.add_circle_outline,
+                    size: 18,
                     color: CockpitColors.primary,
                   ),
-                  label: const Text('Demo'),
+                  label: const Text('+ Nueva pista'),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FilaPista extends StatelessWidget {
+  const _FilaPista({required this.pista, required this.activa});
+
+  final PistaLocal pista;
+  final bool activa;
+
+  @override
+  Widget build(BuildContext context) {
+    final PistaLocal p = pista;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: activa
+            ? CockpitColors.primary.withValues(alpha: 0.10)
+            : CockpitColors.surfaceLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(CockpitRadius.md),
+          side: BorderSide(
+            color: activa
+                ? CockpitColors.primary.withValues(alpha: 0.7)
+                : CockpitColors.outlineVariant,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: Key('pista-item-${p.id}'),
+          onTap: () => Navigator.of(context).pop(p.id),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  activa ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 18,
+                  color: activa ? CockpitColors.primary : CockpitColors.outline,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        p.nombre,
+                        overflow: TextOverflow.ellipsis,
+                        style: CockpitText.bodyMd.copyWith(
+                          color: activa
+                              ? Colors.white
+                              : CockpitColors.onSurface,
+                          fontWeight: activa
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        p.geometria.etiqueta,
+                        key: Key('pista-tipo-${p.id}'),
+                        style: CockpitText.telemetrySm.copyWith(
+                          color: CockpitColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!p.configurada) ...<Widget>[
+                  Icon(
+                    Icons.pending_outlined,
+                    key: Key('pista-pendiente-${p.id}'),
+                    size: 14,
+                    color: CockpitColors.warning,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  p.configurada
+                      ? '${p.longitudM.toStringAsFixed(2).replaceAll('.', ',')} m'
+                      : 'pendiente',
+                  style: CockpitText.telemetrySm.copyWith(
+                    color: CockpitColors.onSurfaceVariant,
+                  ),
+                ),
+                IconButton(
+                  key: Key('pista-eliminar-${p.id}'),
+                  tooltip: 'Eliminar pista ${p.nombre}',
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: CockpitColors.outline,
+                  ),
+                  onPressed: () =>
+                      Navigator.of(context)
+                          .pop('${_PantallaLoginState._accionEliminar}${p.id}'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -649,14 +804,14 @@ class _SelectorRol extends StatelessWidget {
                 children: <Widget>[
                   _opcion(
                     clave: const Key('rol-operador'),
-                    etiqueta: 'Operador',
-                    icono: Icons.engineering_outlined,
+                    etiqueta: 'User',
+                    icono: Icons.person_outline,
                     activa: !esAdmin,
                     alTocar: () => alCambiar(RolUsuario.operador),
                   ),
                   _opcion(
                     clave: const Key('rol-administrador'),
-                    etiqueta: 'Administrador',
+                    etiqueta: 'Admin',
                     icono: Icons.admin_panel_settings_outlined,
                     activa: esAdmin,
                     alTocar: () => alCambiar(RolUsuario.administrador),
@@ -795,9 +950,9 @@ class _AvisoPistaPendiente extends StatelessWidget {
       children: <Widget>[
         Text(
           bloqueaOperador
-              ? '$nombre está pendiente de escaneo. El Operador solo puede '
+              ? '$nombre está pendiente de escaneo. Un User solo puede '
                     'entrar con una pista configurada.'
-              : '$nombre está pendiente de escaneo (modo Administrador).',
+              : '$nombre está pendiente de escaneo (modo Admin).',
           textAlign: TextAlign.center,
           style: CockpitText.bodySm.copyWith(color: CockpitColors.warning),
         ),

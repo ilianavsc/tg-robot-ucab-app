@@ -1096,6 +1096,14 @@ class MqttService extends ChangeNotifier {
     if (!_descartado) notifyListeners();
   }
 
+  /// Solo para pruebas: marca la conexión como **establecida** sin red (la
+  /// operación real enciende el mini-mapa y los controles con ella).
+  @visibleForTesting
+  void debugMarcarConectado() {
+    _desconexionManual = false;
+    _cambiarConexion(EstadoConexion.conectado);
+  }
+
   @visibleForTesting
   void debugProcesarRutasEstado(String json) => _decodificarRutasEstado(json);
 

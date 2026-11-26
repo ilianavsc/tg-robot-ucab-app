@@ -6,8 +6,9 @@ import '../auth/registro_usuarios.dart';
 import '../auth/sesion_local.dart';
 import '../telemetria/cockpit_ui.dart';
 
-/// **Gestión de Usuarios** (solo Administrador): alta y baja de operadores en
-/// memoria (`RegistroUsuarios`). Sin backend: las cuentas nuevas permiten
+/// **Gestión de Usuarios** (solo Admin): alta y baja de cuentas en memoria
+/// (`RegistroUsuarios`). Con el Modo Desarrollador apagado solo se crean
+/// usuarios estándar (**User**); encendido, también cuentas **Admin**. Sin backend: las cuentas nuevas permiten
 /// iniciar sesión en el Login mientras la app siga abierta y se pierden al
 /// cerrarla. Modelo cerrado: no existe registro público.
 class PantallaGestionUsuarios extends StatefulWidget {
@@ -23,6 +24,7 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
   final TextEditingController _usuario = TextEditingController();
   final TextEditingController _clave = TextEditingController();
   bool _verClave = false;
+  RolUsuario _rolNuevo = RolUsuario.operador;
   String? _mensaje;
   bool _exito = false;
 
@@ -36,17 +38,24 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
 
   void _crear() {
     final RegistroUsuarios registro = context.read<RegistroUsuarios>();
-    final RolUsuario? actor = context.read<SesionLocal>().rol;
+    final SesionLocal sesion = context.read<SesionLocal>();
     final String usuario = RegistroUsuarios.normalizar(_usuario.text);
-    final ResultadoAlta r = registro.crearOperador(
-      actor: actor,
+    final RolUsuario rol = sesion.modoDesarrollador
+        ? _rolNuevo
+        : RolUsuario.operador;
+    final ResultadoAlta r = registro.crearCuenta(
+      actor: sesion.rol,
+      rol: rol,
       nombre: _nombre.text,
       usuario: _usuario.text,
       clave: _clave.text,
+      modoDesarrollador: sesion.modoDesarrollador,
     );
     setState(() {
       _exito = r.exito;
-      _mensaje = r.exito ? 'Operador @$usuario creado.' : r.mensaje;
+      _mensaje = r.exito
+          ? '${rol == RolUsuario.administrador ? 'Admin' : 'User'} @$usuario creado.'
+          : r.mensaje;
       if (r.exito) {
         _nombre.clear();
         _usuario.clear();
@@ -63,7 +72,7 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
     setState(() {
       _exito = ok;
       _mensaje = ok
-          ? 'Operador @${c.usuario} eliminado.'
+          ? 'Cuenta @${c.usuario} eliminada.'
           : 'No se pudo eliminar a @${c.usuario}.';
     });
   }
@@ -95,8 +104,10 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
   @override
   Widget build(BuildContext context) {
     final RegistroUsuarios registro = context.watch<RegistroUsuarios>();
-    final bool esAdmin =
-        context.watch<SesionLocal>().rol == RolUsuario.administrador;
+    final SesionLocal sesion = context.watch<SesionLocal>();
+    final bool esAdmin = sesion.rol == RolUsuario.administrador;
+    final bool dev = sesion.modoDesarrollador;
+    final RolUsuario rolNuevo = dev ? _rolNuevo : RolUsuario.operador;
 
     return Scaffold(
       appBar: AppBar(
@@ -135,9 +146,14 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Demo local sin backend: las cuentas viven en memoria y se '
-                      'pierden al cerrar la app. No hay registro público: solo un '
-                      'Administrador crea operadores.',
+                      dev
+                          ? 'Modo Desarrollador: puedes crear usuarios estándar '
+                                '(User) y cuentas Admin. Las cuentas viven en '
+                                'memoria y se pierden al cerrar la app.'
+                          : 'Solo puedes crear usuarios estándar (User). Activa el '
+                                'Modo Desarrollador para crear cuentas Admin. Las '
+                                'cuentas viven en memoria y se pierden al cerrar la app.',
+                      key: const Key('usuarios-aviso'),
                       style: CockpitText.bodySm.copyWith(
                         color: CockpitColors.onSurfaceVariant,
                       ),
@@ -152,9 +168,40 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
                   children: <Widget>[
                     const SectionLabel(
                       icono: Icons.person_add_alt_1_outlined,
-                      etiqueta: 'Crear operador',
+                      etiqueta: 'Crear usuario',
                     ),
                     const SizedBox(height: 12),
+                    if (dev) ...<Widget>[
+                      SegmentedButton<RolUsuario>(
+                        key: const Key('usuarios-rol'),
+                        showSelectedIcon: false,
+                        segments: const <ButtonSegment<RolUsuario>>[
+                          ButtonSegment<RolUsuario>(
+                            value: RolUsuario.operador,
+                            label: Text('USER', key: Key('usuarios-rol-user')),
+                            icon: Icon(Icons.person_outline, size: 16),
+                          ),
+                          ButtonSegment<RolUsuario>(
+                            value: RolUsuario.administrador,
+                            label: Text(
+                              'ADMIN',
+                              key: Key('usuarios-rol-admin'),
+                            ),
+                            icon: Icon(
+                              Icons.admin_panel_settings_outlined,
+                              size: 16,
+                            ),
+                          ),
+                        ],
+                        selected: <RolUsuario>{rolNuevo},
+                        onSelectionChanged: (Set<RolUsuario> sel) {
+                          if (sel.isNotEmpty) {
+                            setState(() => _rolNuevo = sel.first);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
                       key: const Key('usuarios-nombre'),
                       controller: _nombre,
@@ -218,7 +265,11 @@ class _PantallaGestionUsuariosState extends State<PantallaGestionUsuarios> {
                       key: const Key('usuarios-crear'),
                       onPressed: esAdmin ? _crear : null,
                       icon: const Icon(Icons.add, size: 18),
-                      label: const Text('CREAR OPERADOR'),
+                      label: Text(
+                        rolNuevo == RolUsuario.administrador
+                            ? 'CREAR ADMIN'
+                            : 'CREAR USER',
+                      ),
                     ),
                   ],
                 ),
@@ -277,9 +328,7 @@ class _FilaCuenta extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            admin
-                ? Icons.admin_panel_settings_outlined
-                : Icons.engineering_outlined,
+            admin ? Icons.admin_panel_settings_outlined : Icons.person_outline,
             color: admin ? CockpitColors.warning : CockpitColors.primary,
           ),
           const SizedBox(width: 12),

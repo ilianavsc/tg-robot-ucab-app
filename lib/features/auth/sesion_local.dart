@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-/// Rol de la sesión local.
+/// Rol de la sesión local: **User** (usuario estándar) o **Admin**.
 enum RolUsuario {
-  operador('OPERADOR', 'Operador'),
+  operador('USER', 'Usuario'),
   administrador('ADMIN', 'Administrador');
 
   const RolUsuario(this.etiqueta, this.nombre);
@@ -38,12 +38,13 @@ class SesionLocal extends ChangeNotifier {
   /// Nombre para mostrar (`Administrador demo`, `Ana Pérez`, ...).
   String get nombre => _nombre;
 
-  /// `true` si se entró con el botón "Modo Demo (Offline)".
+  /// `true` si se entró con el botón **Demo** de la pantalla de inicio.
   bool get demo => _demo;
 
-  /// **Modo Desarrollador** (solo Administrador): muestra los controles del
-  /// robot, la conexión y las herramientas técnicas. Arranca apagado en cada
-  /// sesión y se apaga al cerrarla; con el Operador siempre es `false`.
+  /// **Modo Desarrollador** (solo Admin): habilita crear cuentas Admin, las
+  /// consolas de sensores (telemetría en vivo), el historial de datos y las
+  /// herramientas técnicas. Arranca apagado en cada sesión y se apaga al
+  /// cerrarla; con un User siempre es `false`.
   bool get modoDesarrollador =>
       _rol == RolUsuario.administrador && _modoDesarrollador;
 
@@ -57,6 +58,40 @@ class SesionLocal extends ChangeNotifier {
     }
     return true;
   }
+
+  /// `true` si la sesión de Demo está usando la cuenta `Admin (Demo)`.
+  bool get demoAdmin => _demo && _rol == RolUsuario.administrador;
+
+  /// **Solo en Modo Demo**: cambia en vivo entre `Admin (Demo)` y
+  /// `User (Demo)`. Apaga el Modo Desarrollador al pasar a User. Devuelve
+  /// `false` (sin cambios) fuera de la Demo.
+  bool cambiarCuentaDemo({required bool admin}) {
+    if (!_demo || _rol == null) return false;
+    final RolUsuario nuevo = admin
+        ? RolUsuario.administrador
+        : RolUsuario.operador;
+    if (_rol == nuevo) return true;
+    _rol = nuevo;
+    _usuario = admin ? usuarioAdminDemo : usuarioUserDemo;
+    _nombre = admin ? nombreAdminDemo : nombreUserDemo;
+    _modoDesarrollador = false;
+    notifyListeners();
+    return true;
+  }
+
+  static const String usuarioAdminDemo = 'admin.demo';
+  static const String usuarioUserDemo = 'user.demo';
+  static const String nombreAdminDemo = 'Admin (Demo)';
+  static const String nombreUserDemo = 'User (Demo)';
+
+  /// Inicia la **Demo** con la cuenta `Admin (Demo)`.
+  void iniciarDemo({DateTime? ahora}) => iniciar(
+    RolUsuario.administrador,
+    usuario: usuarioAdminDemo,
+    nombre: nombreAdminDemo,
+    demo: true,
+    ahora: ahora,
+  );
 
   /// Momento en que se inició la sesión local.
   DateTime? get inicio => _inicio;

@@ -9,6 +9,8 @@ import '../../core/theme/cockpit_theme.dart';
 import '../auth/catalogo_pistas.dart';
 import '../auth/sesion_local.dart';
 import '../perfil/pantalla_perfil.dart';
+import '../conexion/acceso_operacion.dart';
+import '../datos/pantalla_datos.dart';
 import 'alertas_p11.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
@@ -21,8 +23,8 @@ import 'solicitud_activa.dart';
 
 /// Pantalla principal de la app (P09) con el sistema de diseño
 /// **Autonomous Laboratory Cockpit**: barra de app con estado y batería,
-/// 4 secciones con barra de navegación inferior (Dashboard, Controles, Radar y
-/// Alertas) y un botón Freno Remoto siempre a mano.
+/// 5 secciones técnicas en Modo Desarrollador (Dashboard, Controles, Radar,
+/// Alertas y Datos) y un botón Freno Remoto siempre a mano.
 ///
 /// Es solo la capa visual: toda la lógica (MQTT, Modo Demo, órdenes, alertas
 /// P11 y analítica P12) sigue en `MqttService` y en `core/`.
@@ -33,8 +35,8 @@ class TelemetriaScreen extends StatefulWidget {
   static const double anchoMaximo = 960;
 
   /// `true` si se muestran las herramientas técnicas (controles del robot,
-  /// conexión, radar, alertas y detalle): solo con una sesión de
-  /// Administrador en **Modo Desarrollador**. Por defecto la app muestra la
+  /// radar, alertas, consolas de sensores e historial de datos): solo con una
+  /// sesión de Admin en **Modo Desarrollador**. Por defecto la app muestra la
   /// vista limpia (mapa + realizar envío). Sin `SesionLocal` en el árbol
   /// (pruebas de componentes aisladas) se muestra la vista completa.
   static bool vistaTecnica(BuildContext context) {
@@ -75,6 +77,8 @@ const List<_Seccion> _secciones = <_Seccion>[
   _Seccion('CONTROLES', Icons.gamepad_outlined, Icons.gamepad),
   _Seccion('RADAR', Icons.radar_outlined, Icons.radar),
   _Seccion('ALERTAS', Icons.notifications_outlined, Icons.notifications),
+  // Modo Desarrollador: consolas de sensores e historial de datos.
+  _Seccion('DATOS', Icons.sensors_outlined, Icons.sensors),
 ];
 
 class _TelemetriaScreenState extends State<TelemetriaScreen> {
@@ -114,8 +118,10 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
         return const PantallaControles(key: ValueKey<int>(1));
       case 2:
         return const PantallaRadar(key: ValueKey<int>(2));
-      default:
+      case 3:
         return const PantallaAlertas(key: ValueKey<int>(3));
+      default:
+        return const PantallaDatos(key: ValueKey<int>(4));
     }
   }
 
@@ -172,95 +178,107 @@ class _TelemetriaScreenState extends State<TelemetriaScreen> {
     final int pendientes = servicio.centroAlertas.pendientes;
     final bool tecnico = TelemetriaScreen.vistaTecnica(context);
     final bool circuitoCerrado = TelemetriaScreen.esCircuitoCerrado(context);
+    // En Demo no hay nada de "Conexión": ni botón, ni hoja, ni broker.
+    final bool demo = sesionEsDemo(context);
     // Al apagar el Modo Desarrollador se vuelve a la vista principal.
     if (!tecnico) _indice = 0;
 
     return ChangeNotifierProvider<SolicitudActiva>.value(
       value: _solicitud,
       child: Scaffold(
-      appBar: CockpitAppBar(
-        servicio: servicio,
-        seccion: tecnico
-            ? _secciones[_indice].nombre
-            : (circuitoCerrado ? 'MAPA Y RECORRIDO' : 'MAPA Y ENVÍOS'),
-        alAjustes: tecnico ? _abrirConexion : null,
-        alPerfil: _abrirPerfil,
-        tecnico: tecnico,
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: TelemetriaScreen.anchoMaximo,
-          ),
-          child: Column(
-            children: <Widget>[
-              if (servicio.simulando) const _FranjaDemo(),
-              if (!tecnico)
-                const Expanded(child: PantallaDashboard(tecnico: false))
-              else ...<Widget>[
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: BannerAlertaActiva(),
-                ),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: MediaQuery.of(context).disableAnimations
-                        ? Duration.zero
-                        : const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    transitionBuilder: (Widget hijo, Animation<double> anim) =>
-                        FadeTransition(opacity: anim, child: hijo),
-                    child: _cuerpo(),
+        appBar: CockpitAppBar(
+          servicio: servicio,
+          seccion: tecnico
+              ? _secciones[_indice].nombre
+              : (circuitoCerrado ? 'MAPA Y RECORRIDO' : 'MAPA Y ENVÍOS'),
+          // Operación real: la Conexión está siempre a mano al iniciar sesión
+          // (no requiere Modo Desarrollador). En Demo no existe.
+          alAjustes: demo ? null : _abrirConexion,
+          alPerfil: _abrirPerfil,
+          tecnico: tecnico,
+        ),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: TelemetriaScreen.anchoMaximo,
+            ),
+            child: Column(
+              children: <Widget>[
+                if (servicio.simulando) const _FranjaDemo(),
+                if (!tecnico)
+                  const Expanded(child: PantallaDashboard(tecnico: false))
+                else ...<Widget>[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: BannerAlertaActiva(),
                   ),
-                ),
-                // En Dashboard y Controles el Freno Remoto flotante tapaba botones
-                // críticos (misión, destinos, matriz táctil) al desplazar: se
-                // reserva su franja para que la lista termine encima.
-                if (_seccionesConFranjaFreno.contains(_indice))
-                  const SizedBox(height: alturaFranjaFreno),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: MediaQuery.of(context).disableAnimations
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      transitionBuilder: (
+                        Widget hijo,
+                        Animation<double> anim,
+                      ) => FadeTransition(opacity: anim, child: hijo),
+                      child: _cuerpo(),
+                    ),
+                  ),
+                  // En Dashboard y Controles el Freno Remoto flotante tapaba botones
+                  // críticos (misión, destinos, matriz táctil) al desplazar: se
+                  // reserva su franja para que la lista termine encima.
+                  if (_seccionesConFranjaFreno.contains(_indice))
+                    const SizedBox(height: alturaFranjaFreno),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-      ),
-      floatingActionButton: tecnico
-          ? FrenoRemotoButton(
-              alPulsar: () => enviarOrden(context, servicio, 'frenar'),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: !tecnico
-          ? null
-          : Container(
-            decoration: const BoxDecoration(
-              color: CockpitColors.surfaceLowest,
-              border: Border(top: BorderSide(color: CockpitColors.outlineVariant)),
-            ),
-            child: Center(
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: TelemetriaScreen.anchoMaximo,
+        floatingActionButton: tecnico
+            ? FrenoRemotoButton(
+                alPulsar: () => enviarOrden(context, servicio, 'frenar'),
+              )
+            : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        bottomNavigationBar: !tecnico
+            ? null
+            : Container(
+                decoration: const BoxDecoration(
+                  color: CockpitColors.surfaceLowest,
+                  border: Border(
+                    top: BorderSide(color: CockpitColors.outlineVariant),
+                  ),
                 ),
-                child: NavigationBar(
-                  selectedIndex: _indice,
-                  onDestinationSelected: (int i) => setState(() => _indice = i),
-                  destinations: <Widget>[
-                    for (int i = 0; i < _secciones.length; i++)
-                      NavigationDestination(
-                        icon: _icono(_secciones[i].icono, i == 3 ? pendientes : 0),
-                        selectedIcon: _icono(
-                          _secciones[i].iconoActivo,
-                          i == 3 ? pendientes : 0,
-                        ),
-                        label: _secciones[i].nombre,
-                        tooltip: '',
-                      ),
-                  ],
+                child: Center(
+                  heightFactor: 1,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: TelemetriaScreen.anchoMaximo,
+                    ),
+                    child: NavigationBar(
+                      selectedIndex: _indice,
+                      onDestinationSelected: (int i) =>
+                          setState(() => _indice = i),
+                      destinations: <Widget>[
+                        for (int i = 0; i < _secciones.length; i++)
+                          NavigationDestination(
+                            icon: _icono(
+                              _secciones[i].icono,
+                              i == 3 ? pendientes : 0,
+                            ),
+                            selectedIcon: _icono(
+                              _secciones[i].iconoActivo,
+                              i == 3 ? pendientes : 0,
+                            ),
+                            label: _secciones[i].nombre,
+                            tooltip: '',
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
       ),
     );
   }

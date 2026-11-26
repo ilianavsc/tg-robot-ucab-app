@@ -12,6 +12,8 @@ import '../../core/mqtt/mqtt_service.dart';
 import '../../core/pistas/trazado_pista.dart';
 import '../../core/theme/cockpit_theme.dart';
 import '../auth/catalogo_pistas.dart';
+import '../conexion/acceso_operacion.dart';
+import '../conexion/tarjeta_conexion.dart';
 import '../perfil/aprendizaje_ruta.dart';
 import 'cockpit_datos.dart';
 import 'cockpit_ui.dart';
@@ -103,8 +105,7 @@ double get fraccionPc2 => puntosControlCanonicosM[1] / largoCanonicoM;
 /// Separación (px) entre el trazado y la etiqueta de una estación. En la
 /// canónica (recta y estrecha) deja libre el barrido del cono del ultrasonido
 /// en las horquillas; en la Pista A (curvas y una S) va pegada al nodo.
-double _separacionEtiqueta(PistaGeometria g) =>
-    g.trazado.id == 'A' ? 18 : 52;
+double _separacionEtiqueta(PistaGeometria g) => g.trazado.id == 'A' ? 18 : 52;
 
 Color colorDeZona(ZonaSonar z) {
   switch (z) {
@@ -151,8 +152,7 @@ Rect rectEtiquetaNodo(PistaGeometria g, DestinoPista d) {
   double y;
   // A un lado del nodo solo si cabe en el lienzo; si no, arriba o abajo.
   final double xLado = n.dx < 0 ? p.dx - sep - ancho : p.dx + sep;
-  final bool cabeAlLado =
-      xLado >= 4 && xLado + ancho <= g.tamano.width - 4;
+  final bool cabeAlLado = xLado >= 4 && xLado + ancho <= g.tamano.width - 4;
   if (n.dy.abs() >= n.dx.abs() || !cabeAlLado) {
     // Arriba o abajo del trazado, extendida hacia el extremo más cercano del
     // lazo: dos estaciones en la misma recta no se pisan.
@@ -281,7 +281,7 @@ class PintorPista extends CustomPainter {
           ..color = CockpitColors.outlineVariant.withValues(alpha: 0.75),
       );
       _punteadoPendiente(canvas, g.camino);
-      // Tramo recorrido resaltado en acento #00F2FE (o esmeralda al completar)
+      // Tramo recorrido resaltado en acento #2DD4BF (o esmeralda al completar)
       if (f != null && f > 0.001) {
         final double finPx = f.clamp(0.0, 1.0) * g.longitud;
         final Color colorRecorrido = estadoRobot == EstadoVisualRobot.completado
@@ -336,7 +336,7 @@ class PintorPista extends CustomPainter {
     }
 
     if (mostrarCheckpointsP05 || esLineal) {
-      final List<double> pcs = puntosControlM.length == 3
+      final List<double> pcs = puntosControlM.length >= 2
           ? puntosControlM
           : puntosControlEquitativos(g.trazado.largoM);
       final double l = g.trazado.largoM > 0 ? g.trazado.largoM : 1.0;
@@ -353,7 +353,9 @@ class PintorPista extends CustomPainter {
       for (int i = 0; i < pcs.length; i++) {
         final double frac = (pcs[i] / l).clamp(0.0, 1.0);
         final bool esMeta = i == pcs.length - 1;
-        final String etiqueta = esMeta ? 'PC3 / META' : 'PC${i + 1}';
+        final String etiqueta = esMeta
+            ? 'PC${pcs.length} / META'
+            : 'PC${i + 1}';
         _marcadorCheckpoint(
           canvas,
           size,
@@ -621,11 +623,7 @@ class PintorPista extends CustomPainter {
     final Color c = colorDeZona(zona);
     final bool alertaCercana =
         zona == ZonaSonar.precaucion || zona == ZonaSonar.parada;
-    final List<Offset> v = triangulosCono(
-      p,
-      ang,
-      lineal ? math.min(d, 90) : d,
-    );
+    final List<Offset> v = triangulosCono(p, ang, lineal ? math.min(d, 90) : d);
     final Path cono = Path()
       ..moveTo(v[0].dx, v[0].dy)
       ..lineTo(v[1].dx, v[1].dy)
@@ -812,15 +810,19 @@ class TarjetaMapaPista extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MqttService servicio = context.watch<MqttService>();
+    final PistaLocal? activa = context.watch<CatalogoPistas?>()?.activa;
+    // Operación real sin conexión: el mini-mapa aparece apagado.
+    if (!operacionHabilitada(context)) {
+      return MapaApagado(pista: activa?.nombre);
+    }
     final SimulacionPista? sim = servicio.pista;
     final Estado? estado = servicio.ultimoEstado;
     final bool sinSenal = estadoSinSenal(estado);
     final Estado? e = sinSenal ? null : estado;
-    final PistaLocal? activa = context.watch<CatalogoPistas?>()?.activa;
     final bool demo = sim != null;
     final double largo =
         sim?.longitudM ?? e?.largoM ?? activa?.longitudM ?? largoCanonicoM;
-    // En Modo Demo la pista activa es siempre lineal (INICIO → PC3 / META) con paridad P04.
+    // En Modo Demo la pista activa es siempre lineal (Pista C: INICIO → PC1 → PC2 / META).
     final TipoGeometriaPista geometria = demo
         ? TipoGeometriaPista.lineal
         : (activa?.geometria ?? TipoGeometriaPista.circuitoCerrado);
@@ -832,12 +834,22 @@ class TarjetaMapaPista extends StatelessWidget {
         (activa != null &&
             (activa.esLineal ||
                 (activa.id != 'A' && activa.esCircuitoCerrado)));
+    // En Demo con la Pista C (lineal, 2 segmentos) se usan sus 2 puntos de
+    // control; sin pista lineal cargada, los tercios equitativos.
+    final List<double>? pcsDemo =
+        (activa != null &&
+            activa.esLineal &&
+            (activa.longitudM - trazado.largoM).abs() < 0.01)
+        ? activa.metricas?.puntosControlM
+        : null;
     final List<double> puntosControlM = demo
-        ? puntosControlEquitativos(trazado.largoM)
+        ? (pcsDemo ?? puntosControlEquitativos(trazado.largoM))
         : (activa?.metricas?.puntosControlM ??
               puntosControlEquitativos(trazado.largoM));
     final Ultrasonido? us = servicio.ultimoUltrasonido;
-    final double? frenteActualCm = sim != null ? sim.frenteCm : us?.frenteValido;
+    final double? frenteActualCm = sim != null
+        ? sim.frenteCm
+        : us?.frenteValido;
     final double? fraccionObjetivo = sim != null
         ? (sim.modoVueltaCompleta ? sim.progresoVuelta : sim.fraccion)
         : (e?.progresoM != null && trazado.largoM > 0
@@ -888,7 +900,9 @@ class TarjetaMapaPista extends StatelessWidget {
             demo: demo,
             enlace: enlace,
             pista: demo
-                ? 'Pista lineal · Demo'
+                ? (pcsDemo != null
+                      ? '${activa!.nombre} · ${puntosControlM.length} segmentos'
+                      : 'Pista lineal · Demo')
                 : (activa == null
                       ? 'Pista canónica'
                       : (mostrarCheckpointsP05
@@ -1080,12 +1094,14 @@ String textoPuntosControlEquitativos(
   double largoM, {
   List<double>? puntosControlM,
 }) {
-  final List<double> pc =
-      (puntosControlM != null && puntosControlM.length == 3)
+  final List<double> pc = (puntosControlM != null && puntosControlM.length >= 2)
       ? puntosControlM
       : puntosControlEquitativos(largoM);
-  return 'Inicio 0,0 · PC1 ${metrosPista(pc[0])} · PC2 ${metrosPista(pc[1])} · '
-      'PC3 ${metrosPista(pc[2])} m';
+  return <String>[
+        'Inicio 0,0',
+        for (int i = 0; i < pc.length; i++) 'PC${i + 1} ${metrosPista(pc[i])}',
+      ].join(' · ') +
+      ' m';
 }
 
 class _Cabecera extends StatelessWidget {
@@ -1193,15 +1209,16 @@ class _MapaState extends State<_Mapa> with SingleTickerProviderStateMixin {
   void initState() {
     super.initState();
     _fraccionActual = widget.fraccionObjetivo;
-    _controlador = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 240),
-    )..addListener(() {
-        if (!mounted || _animacion == null) return;
-        setState(() {
-          _fraccionActual = _animacion!.value;
+    _controlador =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 240),
+        )..addListener(() {
+          if (!mounted || _animacion == null) return;
+          setState(() {
+            _fraccionActual = _animacion!.value;
+          });
         });
-      });
   }
 
   @override
@@ -1242,9 +1259,7 @@ class _MapaState extends State<_Mapa> with SingleTickerProviderStateMixin {
       return;
     }
 
-    _controlador.duration = Duration(
-      milliseconds: widget.esDemo ? 240 : 420,
-    );
+    _controlador.duration = Duration(milliseconds: widget.esDemo ? 240 : 420);
     _animacion = Tween<double>(begin: previo, end: destino).animate(
       CurvedAnimation(parent: _controlador, curve: Curves.easeOutCubic),
     );
@@ -1257,7 +1272,8 @@ class _MapaState extends State<_Mapa> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
-  String _formatoMetrosDos(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
+  String _formatoMetrosDos(double v) =>
+      v.toStringAsFixed(2).replaceAll('.', ',');
 
   @override
   Widget build(BuildContext context) {
@@ -1324,7 +1340,9 @@ class _MapaState extends State<_Mapa> with SingleTickerProviderStateMixin {
                       fraccionRobot: fraccionPintada,
                       fraccionInicioTramo: s?.fraccionInicioTramo,
                       obstaculo: s?.obstaculoFraccion,
-                      frenteCm: s != null ? s.frenteCm : widget.us?.frenteValido,
+                      frenteCm: s != null
+                          ? s.frenteCm
+                          : widget.us?.frenteValido,
                       zona: widget.zona,
                       puntosRuta: widget.puntosRuta,
                       trazado: widget.trazado,

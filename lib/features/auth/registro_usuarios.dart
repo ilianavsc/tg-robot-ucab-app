@@ -28,9 +28,12 @@ class CuentaLocal {
 
 /// Resultado de crear un operador.
 enum ResultadoAlta {
-  creado('Operador creado.'),
-  sinPermiso('Solo un Administrador puede crear operadores.'),
-  nombreVacio('Escribe el nombre del operador.'),
+  creado('Cuenta creada.'),
+  sinPermiso('Solo un Admin puede crear usuarios.'),
+  requiereModoDesarrollador(
+    'Activa el Modo Desarrollador para crear cuentas Admin.',
+  ),
+  nombreVacio('Escribe el nombre del usuario.'),
   usuarioCorto('El usuario necesita al menos 3 caracteres.'),
   usuarioInvalido('Usa solo letras, números, punto, guion y guion bajo.'),
   usuarioRepetido('Ese usuario ya existe.'),
@@ -66,7 +69,7 @@ class RegistroUsuarios extends ChangeNotifier {
       CuentaLocal(
         codigo: '01',
         usuario: 'user',
-        nombre: 'Operador',
+        nombre: 'Usuario',
         clave: 'user',
         rol: RolUsuario.operador,
         demo: true,
@@ -83,7 +86,7 @@ class RegistroUsuarios extends ChangeNotifier {
 
   List<CuentaLocal> get cuentas => List<CuentaLocal>.unmodifiable(_cuentas);
 
-  /// Operadores que se dieron de alta en esta sesión (eliminables).
+  /// Cuentas (User o Admin) que se dieron de alta en esta sesión (eliminables).
   List<CuentaLocal> get operadoresCreados => List<CuentaLocal>.unmodifiable(
     _cuentas.where((CuentaLocal c) => !c.demo),
   );
@@ -111,14 +114,36 @@ class RegistroUsuarios extends ChangeNotifier {
     return c;
   }
 
-  /// Da de alta un **Operador**. Solo lo permite un [actor] Administrador.
+  /// Da de alta un **User** (usuario estándar). Solo lo permite un [actor]
+  /// Admin.
   ResultadoAlta crearOperador({
     required RolUsuario? actor,
     required String nombre,
     required String usuario,
     required String clave,
+  }) => crearCuenta(
+    actor: actor,
+    rol: RolUsuario.operador,
+    nombre: nombre,
+    usuario: usuario,
+    clave: clave,
+  );
+
+  /// Da de alta una cuenta de [rol]. Solo un [actor] Admin crea cuentas; las
+  /// cuentas **Admin** exigen además el **Modo Desarrollador** encendido
+  /// ([modoDesarrollador]).
+  ResultadoAlta crearCuenta({
+    required RolUsuario? actor,
+    required RolUsuario rol,
+    required String nombre,
+    required String usuario,
+    required String clave,
+    bool modoDesarrollador = false,
   }) {
     if (actor != RolUsuario.administrador) return ResultadoAlta.sinPermiso;
+    if (rol == RolUsuario.administrador && !modoDesarrollador) {
+      return ResultadoAlta.requiereModoDesarrollador;
+    }
     final String n = nombre.trim();
     final String u = normalizar(usuario);
     if (n.isEmpty) return ResultadoAlta.nombreVacio;
@@ -134,7 +159,7 @@ class RegistroUsuarios extends ChangeNotifier {
         usuario: u,
         nombre: n,
         clave: clave,
-        rol: RolUsuario.operador,
+        rol: rol,
       ),
     );
     notifyListeners();
@@ -146,7 +171,7 @@ class RegistroUsuarios extends ChangeNotifier {
   bool eliminarOperador({required RolUsuario? actor, required String usuario}) {
     if (actor != RolUsuario.administrador) return false;
     final CuentaLocal? c = buscar(usuario);
-    if (c == null || c.demo || c.rol != RolUsuario.operador) return false;
+    if (c == null || c.demo) return false;
     _cuentas.remove(c);
     notifyListeners();
     return true;

@@ -1,66 +1,65 @@
 import 'package:flutter/material.dart';
 
-/// Tokens de color del sistema de diseño **Autonomous Laboratory Cockpit**
-/// (`DESIGN.md`, generado en Google Stitch).
+/// Tokens de color de la app: **versión oscura nativa del portafolio**
+/// `tg-robot-ucab-portfolio`.
 ///
-/// Los valores salen del front-matter del DESIGN.md (tokens Material 3), que
-/// son los que usan las capturas de las 4 pantallas: fondo `#10141A`, tarjetas
-/// `#181C22`, celdas `#1C2026`, Freno Remoto y CRITICAL `#93000A`, acento `#00F2FE`.
-/// La amarilla de advertencia (`#F59E0B`) y el rojo de peligro (`#EF4444`)
-/// vienen de la sección "Colors" del mismo documento.
+/// Fondo profundo `#0B0F19`, tarjetas `#111827` con bordes sutiles `#1E293B`,
+/// acento cian/turquesa técnico (`#2DD4BF` / `#06B6D4`), verde de estado
+/// (`#4ADE80`), ámbar de alerta (`#F59E0B`) y rojo de peligro (`#EF4444`).
 abstract final class CockpitColors {
-  // Superficies (de la más hundida a la más elevada)
+  // Superficies (de la más hundida a la más elevada). Paleta del modo oscuro
+  // del portafolio `tg-robot-ucab-portfolio` (fondo #0B0F19, tarjetas
+  // #111827 y bordes sutiles #1E293B).
   static const Color surfaceLowest = Color(
-    0xFF0A0E14,
+    0xFF070A12,
   ); // barra de app y de navegación
-  static const Color surface = Color(0xFF10141A); // lienzo base
-  static const Color surfaceLow = Color(0xFF181C22); // tarjetas
-  static const Color surfaceContainer = Color(0xFF1C2026); // celdas de métrica
+  static const Color surface = Color(0xFF0B0F19); // lienzo base
+  static const Color surfaceLow = Color(0xFF111827); // tarjetas
+  static const Color surfaceContainer = Color(0xFF162032); // celdas de métrica
   static const Color surfaceHigh = Color(
-    0xFF262A31,
+    0xFF1E293B,
   ); // botones secundarios, pozos
-  static const Color surfaceHighest = Color(0xFF31353C); // modales
+  static const Color surfaceHighest = Color(0xFF273449); // modales
 
-  // Texto y contornos (espejo modo oscuro de tokens.css)
-  static const Color onSurface = Color(0xFFDFE2EB);
-  static const Color onSurfaceVariant = Color(0xFFB9CACB);
-  static const Color outline = Color(0xFF849495);
-  static const Color outlineVariant = Color(0xFF3A494B);
+  // Texto y contornos
+  static const Color onSurface = Color(0xFFE5E7EB);
+  static const Color onSurfaceVariant = Color(0xFF94A3B8);
+  static const Color outline = Color(0xFF64748B);
+  static const Color outlineVariant = Color(0xFF1E293B);
   static const Color borderSubtle = Color(0x14FFFFFF); // rgba(255,255,255,0.08)
   static const Color neutral = outline;
 
-  // Primario: "Cyber Teal". `primary` es el token primary-container (#00F2FE),
-  // el acento real de las capturas; `primaryText` es el token primary (#E0FDFF).
-  static const Color primary = Color(0xFF00F2FE);
-  static const Color primaryText = Color(0xFFE0FDFF);
-  static const Color onPrimary = Color(0xFF00373A);
-  static const Color primaryDim = Color(0xFF00DCE6);
-  static const Color primaryTonal = Color(0xFF004F53);
-  static const Color onPrimaryContainer = Color(0xFF006A70);
+  // Primario: cian/turquesa técnico del portafolio.
+  static const Color primary = Color(0xFF2DD4BF);
+  static const Color primaryText = Color(0xFFCCFBF1);
+  static const Color onPrimary = Color(0xFF042F2E);
+  static const Color primaryDim = Color(0xFF06B6D4);
+  static const Color primaryTonal = Color(0xFF134E4A);
+  static const Color onPrimaryContainer = Color(0xFF0F766E);
 
-  // Secundario: "Electric Cobalt"
-  static const Color secondary = Color(0xFFADC6FF);
-  static const Color secondaryContainer = Color(0xFF0566D9);
+  // Secundario: cian
+  static const Color secondary = Color(0xFF67E8F9);
+  static const Color secondaryContainer = Color(0xFF0E7490);
 
-  // Terciario: "Autonomous Emerald" (salud del sistema, trayectoria nominal)
-  static const Color ok = Color(0xFF4EDEA3);
-  static const Color okContainer = Color(0xFF67F4B7);
-  static const Color okTonal = Color(0xFF005236);
+  // Estado OK (verde)
+  static const Color ok = Color(0xFF4ADE80);
+  static const Color okContainer = Color(0xFF86EFAC);
+  static const Color okTonal = Color(0xFF14532D);
 
   // Alertas
   static const Color error = Color(
-    0xFFFFB4AB,
+    0xFFF87171,
   ); // texto/contorno sobre fondo oscuro
   static const Color errorContainer = Color(
-    0xFF93000A,
+    0xFF7F1D1D,
   ); // Freno Remoto, etiquetas CRITICAL
-  static const Color onErrorContainer = Color(0xFFFFDAD6);
+  static const Color onErrorContainer = Color(0xFFFEE2E2);
   static const Color hazard = Color(
     0xFFEF4444,
   ); // relleno y resplandor de peligro
   static const Color warning = Color(
     0xFFF59E0B,
-  ); // precaución (20-50 cm, batería)
+  ); // ámbar: precaución (20-50 cm, batería)
 }
 
 /// Estilos tipográficos del DESIGN.md: **Inter** para títulos y descripciones,
@@ -185,23 +184,23 @@ ThemeData buildCockpitTheme() {
     primary: CockpitColors.primary,
     onPrimary: CockpitColors.onPrimary,
     primaryContainer: CockpitColors.primaryTonal,
-    onPrimaryContainer: Color(0xFF6FF6FF),
+    onPrimaryContainer: CockpitColors.primaryText,
     secondary: CockpitColors.secondary,
-    onSecondary: Color(0xFF002E6A),
+    onSecondary: Color(0xFF083344),
     secondaryContainer: CockpitColors.secondaryContainer,
-    onSecondaryContainer: Color(0xFFE6ECFF),
+    onSecondaryContainer: Color(0xFFCFFAFE),
     tertiary: CockpitColors.ok,
-    onTertiary: Color(0xFF003824),
+    onTertiary: Color(0xFF052E16),
     tertiaryContainer: CockpitColors.okTonal,
-    onTertiaryContainer: Color(0xFF6FFBBE),
+    onTertiaryContainer: CockpitColors.okContainer,
     error: CockpitColors.error,
-    onError: Color(0xFF690005),
+    onError: Color(0xFF450A0A),
     errorContainer: CockpitColors.errorContainer,
     onErrorContainer: CockpitColors.onErrorContainer,
     surface: CockpitColors.surface,
     onSurface: CockpitColors.onSurface,
     surfaceDim: CockpitColors.surface,
-    surfaceBright: Color(0xFF353940),
+    surfaceBright: Color(0xFF334155),
     surfaceContainerLowest: CockpitColors.surfaceLowest,
     surfaceContainerLow: CockpitColors.surfaceLow,
     surfaceContainer: CockpitColors.surfaceContainer,
@@ -213,8 +212,8 @@ ThemeData buildCockpitTheme() {
     shadow: Color(0xFF000000),
     scrim: Color(0xFF000000),
     inverseSurface: CockpitColors.onSurface,
-    onInverseSurface: Color(0xFF2D3137),
-    inversePrimary: Color(0xFF00696F),
+    onInverseSurface: Color(0xFF111827),
+    inversePrimary: Color(0xFF0F766E),
     surfaceTint: CockpitColors.primaryDim,
   );
 

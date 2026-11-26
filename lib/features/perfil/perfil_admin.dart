@@ -9,6 +9,7 @@ import 'aprendizaje_ruta.dart';
 import 'gestion_usuarios.dart';
 import 'pantalla_aprendizaje_ruta.dart';
 import '../telemetria/analitica_p12.dart';
+import '../datos/pantalla_datos.dart';
 import '../telemetria/cockpit_ui.dart';
 
 String _cm(double v) => v.toStringAsFixed(0);
@@ -200,12 +201,88 @@ class SeccionAdministracion extends StatelessWidget {
           ],
           const TarjetaGestionUsuarios(),
           if (modoDesarrollador) ...<Widget>[
+            const SizedBox(height: 10),
+            const _AccesoDatos(
+              clave: Key('perfil-consolas-sensores'),
+              icono: Icons.sensors,
+              titulo: 'Consolas de sensores',
+              detalle: 'Telemetría en vivo: energía, motores, línea y sonar',
+            ),
+            const SizedBox(height: 10),
+            const _AccesoDatos(
+              clave: Key('perfil-historial-datos'),
+              icono: Icons.history,
+              titulo: 'Historial de datos',
+              detalle: 'Registro de lecturas y eventos de la sesión',
+            ),
             const SizedBox(height: 12),
             const TarjetaAnaliticaSesion(),
             const SizedBox(height: 10),
             BotonExportarSesion(servicio: servicio),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Acceso (Modo Desarrollador) a las consolas de sensores y al historial.
+class _AccesoDatos extends StatelessWidget {
+  const _AccesoDatos({
+    required this.clave,
+    required this.icono,
+    required this.titulo,
+    required this.detalle,
+  });
+
+  final Key clave;
+  final IconData icono;
+  final String titulo;
+  final String detalle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: CockpitColors.surfaceContainer,
+      borderRadius: BorderRadius.circular(CockpitRadius.md),
+      child: InkWell(
+        key: clave,
+        borderRadius: BorderRadius.circular(CockpitRadius.md),
+        onTap: () => Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => const PaginaDatos())),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: <Widget>[
+              Icon(icono, color: CockpitColors.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      titulo,
+                      style: CockpitText.bodyMd.copyWith(
+                        color: CockpitColors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      detalle,
+                      style: CockpitText.bodySm.copyWith(
+                        color: CockpitColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: CockpitColors.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

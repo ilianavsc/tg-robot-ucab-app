@@ -84,9 +84,7 @@ class CockpitCard extends StatelessWidget {
         color: degradado == null ? CockpitColors.surfaceLow : null,
         gradient: degradado,
         borderRadius: BorderRadius.circular(CockpitRadius.lg),
-        border: Border.all(
-          color: borde ?? CockpitColors.outlineVariant.withValues(alpha: 0.55),
-        ),
+        border: Border.all(color: borde ?? CockpitColors.outlineVariant),
         boxShadow: resplandor == null
             ? null
             : <BoxShadow>[
