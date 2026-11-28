@@ -133,6 +133,7 @@ class MqttService extends ChangeNotifier {
   String? _ultimoError;
 
   final Map<String, _OrdenEnviada> _ordenes = <String, _OrdenEnviada>{};
+  Timer? _temporizadorAck;
   OrdenAck? _ultimoAck;
   String? _ultimaOrdenId;
   String? _ultimoComando;
@@ -212,11 +213,33 @@ class MqttService extends ChangeNotifier {
   /// Comando de la última orden que envió esta app.
   String? get ultimoComando => _ultimoComando;
 
-  /// `true` si la última orden de esta app todavía no tiene confirmación.
+  /// `true` si la última orden de esta app todavía no tiene confirmación ni expiró.
   bool get esperandoAck {
     final id = _ultimaOrdenId;
     if (id == null) return false;
-    return _ordenes[id]?.confirmada == null;
+    final orden = _ordenes[id];
+    if (orden == null) return false;
+    return orden.confirmada == null && !orden.expirada;
+  }
+
+  /// `true` si la última orden superó [RobotMqttContract.ackTimeoutMs] sin ACK.
+  bool get ackExpirado {
+    final id = _ultimaOrdenId;
+    if (id == null) return false;
+    final orden = _ordenes[id];
+    if (orden == null) return false;
+    return orden.confirmada == null && orden.expirada;
+  }
+
+  /// Estado textual del ACK de la última orden (`null` si no se ha enviado ninguna).
+  String? get estadoAck {
+    final id = _ultimaOrdenId;
+    if (id == null) return null;
+    final orden = _ordenes[id];
+    if (orden == null) return null;
+    if (orden.confirmada != null) return 'confirmada';
+    if (orden.expirada) return 'resultado desconocido';
+    return 'esperando ACK';
   }
 
   /// `true` si se pueden enviar órdenes (conectado al broker o en Modo Demo).
@@ -271,6 +294,8 @@ class MqttService extends ChangeNotifier {
   void desconectar() {
     _desconexionManual = true;
     _temporizadorReintento?.cancel();
+    _temporizadorAck?.cancel();
+    _temporizadorAck = null;
     _esperaActual = _esperaMinima;
     try {
       _cliente?.disconnect();
@@ -757,6 +782,8 @@ class MqttService extends ChangeNotifier {
       analitica.reiniciar();
       centroAlertas.reiniciar();
       if (_ultimoAck?.simulada ?? false) {
+        _temporizadorAck?.cancel();
+        _temporizadorAck = null;
         _ultimoAck = null;
         _ultimaOrdenId = null;
         _ultimoComando = null;
@@ -770,6 +797,8 @@ class MqttService extends ChangeNotifier {
   void dispose() {
     _descartado = true;
     _temporizadorDemo?.cancel();
+    _temporizadorAck?.cancel();
+    _temporizadorAck = null;
     for (final Timer t in _timersAckDemo) {
       t.cancel();
     }
@@ -905,6 +934,7 @@ class MqttService extends ChangeNotifier {
   }
 
   void _guardarOrden(String id, String comando) {
+    _temporizadorAck?.cancel();
     _ordenes[id] = _OrdenEnviada(comando: comando, envio: DateTime.now());
     while (_ordenes.length > _maxOrdenesGuardadas) {
       _ordenes.remove(_ordenes.keys.first);
@@ -912,6 +942,22 @@ class MqttService extends ChangeNotifier {
     _ultimaOrdenId = id;
     _ultimoComando = comando;
     _ultimoError = null;
+    _temporizadorAck = Timer(
+      const Duration(milliseconds: RobotMqttContract.ackTimeoutMs),
+      () => _expirarAck(id),
+    );
+    notifyListeners();
+  }
+
+  void _expirarAck(String id) {
+    _temporizadorAck = null;
+    if (_descartado) return;
+    final orden = _ordenes[id];
+    if (orden == null || orden.confirmada != null || orden.expirada) return;
+    orden.expirada = true;
+    _ultimoError =
+        'Sin confirmación (ACK) tras ${RobotMqttContract.ackTimeoutMs ~/ 1000} s '
+        'para "${orden.comando}": resultado desconocido.';
     notifyListeners();
   }
 
@@ -923,9 +969,17 @@ class MqttService extends ChangeNotifier {
         throw const FormatException('el payload no es un objeto JSON');
       }
       final ahora = DateTime.now();
-      final orden = _ordenes[mapa['id']?.toString()];
+      final idAck = mapa['id']?.toString();
+      final orden = _ordenes[idAck];
       final repetida = orden != null && orden.confirmada != null;
-      if (orden != null && orden.confirmada == null) orden.confirmada = ahora;
+      if (orden != null && orden.confirmada == null) {
+        orden.confirmada = ahora;
+        orden.expirada = false;
+      }
+      if (idAck != null && idAck == _ultimaOrdenId) {
+        _temporizadorAck?.cancel();
+        _temporizadorAck = null;
+      }
       _ultimoAck = OrdenAck.fromJson(
         mapa,
         llegada: ahora,
@@ -947,6 +1001,11 @@ class MqttService extends ChangeNotifier {
     if (orden == null || orden.confirmada != null) return;
     final ahora = DateTime.now();
     orden.confirmada = ahora;
+    orden.expirada = false;
+    if (id == _ultimaOrdenId) {
+      _temporizadorAck?.cancel();
+      _temporizadorAck = null;
+    }
     _ultimoAck = OrdenAck(
       id: id,
       llegada: ahora,
@@ -1117,6 +1176,18 @@ class MqttService extends ChangeNotifier {
   @visibleForTesting
   void debugProcesarAlertaMpu(String json) => _decodificarAlerta(json);
 
+  /// Solo para pruebas: registra una orden pendiente para verificar el timeout de ACK.
+  @visibleForTesting
+  String debugRegistrarOrdenPendiente(String comando) {
+    final id = const Uuid().v4();
+    _guardarOrden(id, comando);
+    return id;
+  }
+
+  /// Solo para pruebas: inyecta un payload JSON en `ordenes/ack`.
+  @visibleForTesting
+  void debugProcesarAck(String json) => _decodificarAck(json);
+
   /// Guarda las últimas distancias de los ultrasónicos. No toca el Modo Demo
   /// ni el estado general: es un tópico aparte.
   void _decodificarUltrasonido(String texto) {
@@ -1169,4 +1240,5 @@ class _OrdenEnviada {
   final String comando;
   final DateTime envio;
   DateTime? confirmada;
+  bool expirada = false;
 }

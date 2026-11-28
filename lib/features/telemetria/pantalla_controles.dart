@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/contracts/generated/robot_contract.dart';
 import '../../core/models/estado.dart';
 import '../../core/models/orden_ack.dart';
 import '../../core/mqtt/mqtt_service.dart';
@@ -183,9 +184,14 @@ class _BannerModo extends StatelessWidget {
     }
 
     final String? cmd = servicio.ultimoComando;
+    final String estadoOrden = servicio.esperandoAck
+        ? ' · esperando ACK…'
+        : servicio.ackExpirado
+        ? ' · sin ACK (resultado desconocido)'
+        : ' · confirmada';
     final String sub = cmd == null
         ? 'Bus de órdenes MQTT · QoS 1'
-        : 'Última orden: $cmd${servicio.esperandoAck ? ' · esperando ACK…' : ' · confirmada'}';
+        : 'Última orden: $cmd$estadoOrden';
     final Duration? lat = servicio.ultimoAck?.latencia;
 
     return CockpitCard(
@@ -215,7 +221,9 @@ class _BannerModo extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: CockpitText.telemetrySm.copyWith(
-                    color: CockpitColors.onSurfaceVariant,
+                    color: servicio.ackExpirado
+                        ? CockpitColors.warning
+                        : CockpitColors.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -531,6 +539,8 @@ class _TarjetaAck extends StatelessWidget {
     return _TarjetaAccion(
       icono: ack.etiqueta == 'ESPERANDO'
           ? Icons.hourglass_top
+          : ack.etiqueta == 'SIN ACK'
+          ? Icons.warning_amber_rounded
           : Icons.check_circle_outline,
       colorIcono: ack.color,
       fondoIcono: ack.color.withValues(alpha: 0.18),
@@ -554,6 +564,17 @@ class _TarjetaAck extends StatelessWidget {
             'Enviada "${servicio.ultimoComando ?? ''}": esperando confirmación. '
             'Si no llega, revisa que el robot (o el P10) esté en el mismo broker.',
         etiqueta: 'ESPERANDO',
+        color: CockpitColors.warning,
+      );
+    }
+    if (servicio.ackExpirado) {
+      return (
+        titulo: 'ÚLTIMO ACK',
+        detalle:
+            'Sin confirmación tras ${RobotMqttContract.ackTimeoutMs ~/ 1000} s '
+            'para "${servicio.ultimoComando ?? ''}" — resultado desconocido. '
+            'Revisa la conexión del robot antes de reintentar.',
+        etiqueta: 'SIN ACK',
         color: CockpitColors.warning,
       );
     }
